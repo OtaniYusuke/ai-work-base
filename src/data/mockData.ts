@@ -736,3 +736,58 @@ export const logs: LogEntry[] = [
   { id: 'log9', type: 'execution', workflowId: 'wf1', targetName: '見積書自動送付フロー', instanceId: 'inst1', actor: '見積書生成AI', eventType: 'AI処理完了', content: '見積書ドラフトの生成が完了しました', timestamp: '2026-03-23 09:05:00' },
   { id: 'log10', type: 'execution', workflowId: 'wf1', targetName: '見積書自動送付フロー', instanceId: 'inst1', actor: '渡辺 裕子', eventType: 'タスク完了', content: '見積内容確認・修正を完了しました', timestamp: '2026-03-23 09:25:00' },
 ];
+
+// ========================================
+// 設計タスク（WF作成・エージェント作成など）
+// ========================================
+export interface DesignTask {
+  id: string;
+  type: 'workflow_design' | 'agent_design' | 'workflow_improvement';
+  title: string;
+  description: string;
+  assigneeId: string;
+  relatedWorkflowId?: string;
+  status: 'pending' | 'in_progress';
+  createdAt: string;
+}
+
+export const DESIGN_TASK_TYPE_LABELS: Record<DesignTask['type'], string> = {
+  workflow_design: 'WF設計',
+  agent_design: 'エージェント設計',
+  workflow_improvement: 'WF改善',
+};
+
+export const designTasks: DesignTask[] = [
+  { id: 'dt1', type: 'workflow_design', title: '経費精算フローの新規設計', description: '経理部から依頼があった経費精算業務の自動化フローを設計してください。申請→AI確認→上長承認→経理処理の流れを想定。', assigneeId: 'u2', status: 'pending', createdAt: '2026-03-22 14:00' },
+  { id: 'dt2', type: 'agent_design', title: '議事録要約AIの設定更新', description: '議事録要約AIの精度改善のため、プロンプト調整とRAG参照先の見直しを行ってください。', assigneeId: 'u3', relatedWorkflowId: 'wf4', status: 'in_progress', createdAt: '2026-03-21 10:00' },
+  { id: 'dt3', type: 'workflow_improvement', title: '見積書フローの承認ステップ改善', description: '承認時のコメント必須化と、金額閾値による承認者自動切替を追加してください。', assigneeId: 'u2', relatedWorkflowId: 'wf1', status: 'pending', createdAt: '2026-03-23 09:00' },
+  { id: 'dt4', type: 'workflow_design', title: '顧客問い合わせ対応フロー構築', description: '営業部の顧客問い合わせ対応を自動化するフローを構築。AIによる初期分類→担当振り分け→回答ドラフト生成。', assigneeId: 'u2', status: 'pending', createdAt: '2026-03-23 10:00' },
+  { id: 'dt5', type: 'agent_design', title: 'メール分類AIの本番設定', description: 'テスト完了したメール分類AIの本番環境設定を行い、承認申請してください。', assigneeId: 'u3', relatedWorkflowId: 'wf3', status: 'pending', createdAt: '2026-03-22 16:00' },
+];
+
+// ========================================
+// ワークフロー会話（コメント・メンション）
+// ========================================
+export interface WorkflowComment {
+  id: string;
+  workflowId: string;
+  authorId: string;
+  content: string;
+  mentions: { type: 'user' | 'department'; value: string }[];
+  createdAt: string;
+}
+
+export const workflowComments: WorkflowComment[] = [
+  { id: 'wc1', workflowId: 'wf1', authorId: 'u2', content: '@田中 太郎 見積書フローのv3変更について承認をお願いします。コメント必須化の対応です。', mentions: [{ type: 'user', value: 'u1' }], createdAt: '2026-03-22 10:30' },
+  { id: 'wc2', workflowId: 'wf1', authorId: 'u1', content: '確認しました。@営業部 にも影響があるので念のため確認してください。', mentions: [{ type: 'department', value: '営業部' }], createdAt: '2026-03-22 11:15' },
+  { id: 'wc3', workflowId: 'wf1', authorId: 'u6', content: '営業部として問題ありません。現場の運用フローに影響はなさそうです。', mentions: [], createdAt: '2026-03-22 14:00' },
+  { id: 'wc4', workflowId: 'wf1', authorId: 'u2', content: 'ありがとうございます。@田中 太郎 営業部確認OKです。承認よろしくお願いします。', mentions: [{ type: 'user', value: 'u1' }], createdAt: '2026-03-22 14:30' },
+  { id: 'wc5', workflowId: 'wf2', authorId: 'u2', content: '@伊藤 健太 契約書レビューで例外が発生しています。文書フォーマットの問題のようです。対応お願いします。', mentions: [{ type: 'user', value: 'u5' }], createdAt: '2026-03-22 17:00' },
+  { id: 'wc6', workflowId: 'wf2', authorId: 'u5', content: '了解しました。文書フォーマットの問題を調査中です。PDFの構造が想定外だったようです。', mentions: [], createdAt: '2026-03-22 17:30' },
+  { id: 'wc7', workflowId: 'wf2', authorId: 'u5', content: '@鈴木 一郎 AIエージェントのパース設定を調整していただけますか？PDF内のテーブル構造が原因です。', mentions: [{ type: 'user', value: 'u3' }], createdAt: '2026-03-22 18:00' },
+  { id: 'wc8', workflowId: 'wf6', authorId: 'u2', content: '@田中 太郎 新規案件受付フローの承認申請を出しました。ご確認お願いいたします。', mentions: [{ type: 'user', value: 'u1' }], createdAt: '2026-03-22 15:30' },
+  { id: 'wc9', workflowId: 'wf6', authorId: 'u1', content: '@運用管理部 運用面で問題ないか確認お願いします。', mentions: [{ type: 'department', value: '運用管理部' }], createdAt: '2026-03-22 16:00' },
+  { id: 'wc10', workflowId: 'wf6', authorId: 'u4', content: '運用管理部として確認しました。特に問題ありません。ただし初期は監視強化をお願いします。', mentions: [], createdAt: '2026-03-23 09:00' },
+  { id: 'wc11', workflowId: 'wf3', authorId: 'u3', content: 'メール分類AIのテストが完了しました。精度95%を達成。@佐藤 花子 本番移行の準備をお願いします。', mentions: [{ type: 'user', value: 'u2' }], createdAt: '2026-03-23 10:00' },
+  { id: 'wc12', workflowId: 'wf4', authorId: 'u3', content: '議事録要約AIのプロンプト改善案を作成しました。@DX推進部 レビューお願いします。', mentions: [{ type: 'department', value: 'DX推進部' }], createdAt: '2026-03-23 11:00' },
+];

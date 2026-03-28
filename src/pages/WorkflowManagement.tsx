@@ -620,6 +620,7 @@ export default function WorkflowManagement() {
           <div className="flex flex-wrap gap-2">
             <Link to={`/workflows/${wf.id}`} className="px-3 py-1.5 bg-gray-100 rounded text-sm hover:bg-gray-200">詳細</Link>
             <Link to={`/workflows/${wf.id}/edit`} className="px-3 py-1.5 bg-gray-100 rounded text-sm hover:bg-gray-200">編集</Link>
+            <Link to={`/conversations?wf=${wf.id}`} className="px-3 py-1.5 bg-gray-100 rounded text-sm hover:bg-gray-200 flex items-center gap-1"><span>💬</span>会話</Link>
             {canExecute && (
               <button onClick={() => { setSlideExecOpen(!slideExecOpen); setSlideExecMode('single'); setSlideExecBatchInput(''); }}
                 className="px-3 py-1.5 bg-green-600 text-white rounded text-sm hover:bg-green-700 font-medium">実行</button>
@@ -1098,6 +1099,11 @@ export default function WorkflowManagement() {
                   {isExpanded && (
                     <div className="bg-gray-50/30">
                       {directWFs.length > 0 && <div className="ml-6">{directWFs.map(wf => renderWorkflowRow(wf))}</div>}
+                      {/* + button below direct workflows in parent */}
+                      <Link to={`/workflows/new?category=${parent.id}`}
+                        className="ml-6 pl-3 pr-4 py-2 flex items-center gap-2 text-xs text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors border-t border-gray-100">
+                        <span>+</span> ワークフロー追加
+                      </Link>
 
                       {children.map(child => {
                         const childExpanded = expandedFolders.has(child.id);
@@ -1116,7 +1122,7 @@ export default function WorkflowManagement() {
                                 <button
                                   onClick={(e) => { e.stopPropagation(); setAddMenu(addMenu?.catId === child.id ? null : { catId: child.id, isParent: false }); }}
                                   className="opacity-0 group-hover:opacity-100 px-2 py-1 mr-2 text-gray-400 hover:text-blue-600 transition-opacity text-lg leading-none"
-                                  title="ワークフロー追加"
+                                  title="追加"
                                 >+</button>
                                 {addMenu && addMenu.catId === child.id && (
                                   <div className="absolute right-0 top-8 w-48 bg-white border rounded-lg shadow-lg z-20">
@@ -1128,7 +1134,16 @@ export default function WorkflowManagement() {
                                 )}
                               </div>
                             </div>
-                            {childExpanded && childWFs.length > 0 && <div className="ml-12">{childWFs.map(wf => renderWorkflowRow(wf))}</div>}
+                            {childExpanded && (
+                              <div className="ml-12">
+                                {childWFs.map(wf => renderWorkflowRow(wf))}
+                                {/* + button below workflows in child folder */}
+                                <Link to={`/workflows/new?category=${child.id}`}
+                                  className="pl-3 pr-4 py-2 flex items-center gap-2 text-xs text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors border-t border-gray-100">
+                                  <span>+</span> ワークフロー追加
+                                </Link>
+                              </div>
+                            )}
                           </div>
                         );
                       })}

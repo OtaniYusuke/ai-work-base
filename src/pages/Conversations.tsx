@@ -1,4 +1,5 @@
-import { useState, useMemo, useRef, useCallback } from 'react';
+import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   workflows,
@@ -32,8 +33,15 @@ export default function Conversations() {
   const { currentUser } = useAuth();
   const userId = currentUser?.id ?? 'u1';
 
+  const [searchParams] = useSearchParams();
   const [selectedWfId, setSelectedWfId] = useState<string | null>(null);
   const [commentText, setCommentText] = useState('');
+
+  // Auto-select workflow from URL query param (?wf=wf1)
+  useEffect(() => {
+    const wfParam = searchParams.get('wf');
+    if (wfParam) setSelectedWfId(wfParam);
+  }, [searchParams]);
   const [showMentionSuggest, setShowMentionSuggest] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
@@ -196,6 +204,10 @@ export default function Conversations() {
                   <span className="text-xs text-gray-400">{activeComments.length}件のメッセージ</span>
                 </div>
               </div>
+              <Link to={`/workflows/${activeThread.wf.id}`}
+                className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs hover:bg-gray-200 transition-colors font-medium flex items-center gap-1">
+                <span>🔄</span> ワークフロー詳細
+              </Link>
             </div>
 
             {/* Messages */}

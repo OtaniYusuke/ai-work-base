@@ -8,12 +8,8 @@ import {
   instances,
   approvalRequests,
   exceptions,
-  users,
   getUserName,
-  getAgentName,
   aiAgents,
-  notifications,
-  logs,
   WF_STATUS_LABELS,
   WF_STATUS_COLORS,
   INSTANCE_STATUS_LABELS,
@@ -22,7 +18,6 @@ import {
   NODE_TYPE_LABELS,
   TRIGGER_LABELS,
   APPROVAL_TYPE_LABELS,
-  APPROVAL_STATUS_LABELS,
   BATCH_ITEM_STATUS_LABELS,
   BATCH_ITEM_STATUS_COLORS,
 } from '../data/mockData';
@@ -39,16 +34,6 @@ import type {
 // ============================================================
 // Helper functions
 // ============================================================
-
-function getCategoryPath(catId: string, cats: BusinessCategory[]): string {
-  const cat = cats.find(c => c.id === catId);
-  if (!cat) return '';
-  if (cat.parentId) {
-    const parent = cats.find(c => c.id === cat.parentId);
-    return parent ? `${parent.icon} ${parent.name} > ${cat.icon} ${cat.name}` : `${cat.icon} ${cat.name}`;
-  }
-  return `${cat.icon} ${cat.name}`;
-}
 
 function getWorkflowCountForCategory(catId: string, cats: BusinessCategory[]): number {
   const childIds = cats.filter(c => c.parentId === catId).map(c => c.id);
@@ -138,6 +123,32 @@ function getBatchSummaryLine(items: BatchItem[]): string {
   return parts.join(' | ');
 }
 
+function getActionBadgeColor(type: string): { badge: string; border: string } {
+  switch (type) {
+    case 'approve': return { badge: 'bg-yellow-200 text-yellow-800', border: 'border-yellow-300' };
+    case 'execute_task': return { badge: 'bg-blue-200 text-blue-800', border: 'border-blue-300' };
+    case 'handle_exception': return { badge: 'bg-red-200 text-red-800', border: 'border-red-300' };
+    case 'confirm': return { badge: 'bg-green-200 text-green-800', border: 'border-green-300' };
+    case 'trigger': return { badge: 'bg-purple-200 text-purple-800', border: 'border-purple-300' };
+    default: return { badge: 'bg-gray-200 text-gray-800', border: 'border-gray-300' };
+  }
+}
+
+// ============================================================
+// Unified ActionItem type
+// ============================================================
+interface ActionItem {
+  id: string;
+  sourceType: 'approval' | 'instance';
+  actionType: string;
+  title: string;
+  subtitle: string;
+  badge: string;
+  badgeColor: string;
+  cardBorderColor: string;
+  createdAt: string;
+}
+
 // ============================================================
 // Mini Flow Diagram component
 // ============================================================
@@ -172,7 +183,7 @@ function MiniFlowDiagram({ nodes, edges, currentNodeId }: { nodes: WorkflowNode[
         const isCurrent = node.id === currentNodeId;
         return (
           <div key={node.id} className="flex items-center gap-1">
-            {idx > 0 && <span className="text-gray-300 text-xs">→</span>}
+            {idx > 0 && <span className="text-gray-300 text-xs">&rarr;</span>}
             <div
               className={`px-1.5 py-0.5 rounded text-[10px] whitespace-nowrap border ${
                 isCurrent ? 'ring-2 ring-blue-400 font-bold' : ''
@@ -213,7 +224,7 @@ function ProgressBar({ progress, color = 'bg-blue-500', height = 'h-2' }: { prog
 // ============================================================
 // Batch items expandable component
 // ============================================================
-function BatchItemsList({ items, highlightItemId }: { items: BatchItem[]; highlightItemId?: string }) {
+function BatchItemsList({ items }: { items: BatchItem[] }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -222,47 +233,40 @@ function BatchItemsList({ items, highlightItemId }: { items: BatchItem[]; highli
         onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
         className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
       >
-        <span className={`transform transition-transform ${expanded ? 'rotate-90' : ''}`}>▶</span>
+        <span className={`transform transition-transform ${expanded ? 'rotate-90' : ''}`}>&#9654;</span>
         アイテム一覧 ({items.length}件)
       </button>
       {expanded && (
         <div className="mt-2 space-y-1.5">
-          {items.map(item => {
-            const isHighlighted = item.id === highlightItemId;
-            return (
-              <div
-                key={item.id}
-                className={`p-2.5 rounded-lg border text-sm ${
-                  isHighlighted
-                    ? 'border-yellow-400 bg-yellow-50 ring-1 ring-yellow-300'
-                    : 'border-gray-200 bg-white'
-                }`}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-medium text-gray-800">{item.label}</span>
-                  <span className={`px-2 py-0.5 rounded text-xs ${BATCH_ITEM_STATUS_COLORS[item.status]}`}>
-                    {BATCH_ITEM_STATUS_LABELS[item.status]}
-                  </span>
-                </div>
-                {item.currentNode && (
-                  <div className="text-xs text-gray-500 mb-1">現在ノード: {item.currentNode}</div>
-                )}
-                <ProgressBar progress={item.progress} height="h-1.5" color={
-                  item.status === 'completed' ? 'bg-green-500' :
-                  item.status === 'error' ? 'bg-red-500' :
-                  item.status === 'running' ? 'bg-blue-500' :
-                  item.status === 'waiting_approval' ? 'bg-yellow-500' :
-                  'bg-gray-400'
-                } />
-                <div className="flex items-center gap-3 mt-1 text-xs text-gray-400">
-                  {item.detail && <span>{item.detail}</span>}
-                  {item.startedAt && <span>開始: {item.startedAt}</span>}
-                  {item.completedAt && <span>完了: {item.completedAt}</span>}
-                </div>
+          {items.map(item => (
+            <div
+              key={item.id}
+              className="p-2.5 rounded-lg border border-gray-200 bg-white text-sm"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-medium text-gray-800">{item.label}</span>
+                <span className={`px-2 py-0.5 rounded text-xs ${BATCH_ITEM_STATUS_COLORS[item.status]}`}>
+                  {BATCH_ITEM_STATUS_LABELS[item.status]}
+                </span>
               </div>
-            );
-          })}
+              {item.currentNode && (
+                <div className="text-xs text-gray-500 mb-1">現在ノード: {item.currentNode}</div>
+              )}
+              <ProgressBar progress={item.progress} height="h-1.5" color={
+                item.status === 'completed' ? 'bg-green-500' :
+                item.status === 'error' ? 'bg-red-500' :
+                item.status === 'running' ? 'bg-blue-500' :
+                item.status === 'waiting_approval' ? 'bg-yellow-500' :
+                'bg-gray-400'
+              } />
+              <div className="flex items-center gap-3 mt-1 text-xs text-gray-400">
+                {item.detail && <span>{item.detail}</span>}
+                {item.startedAt && <span>開始: {item.startedAt}</span>}
+                {item.completedAt && <span>完了: {item.completedAt}</span>}
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -278,13 +282,11 @@ export default function WorkflowManagement() {
   const userId = currentUser?.id ?? 'u1';
 
   // State
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'my' | 'overview' | 'approval'>('my');
+  const [activeTab, setActiveTab] = useState<'my' | 'overview'>('my');
   const [slideOver, setSlideOver] = useState<{ type: string; data: unknown } | null>(null);
-  const [approvalSplit, setApprovalSplit] = useState<ApprovalRequest | null>(null);
-  const [approvalComment, setApprovalComment] = useState('');
-  const [showApprovalHistory, setShowApprovalHistory] = useState(false);
-  const [expandedBatchInstances, setExpandedBatchInstances] = useState<Set<string>>(new Set());
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => {
+    return new Set(categories.filter(c => c.parentId === null).map(c => c.id));
+  });
 
   // Category creation state
   const [newCatMode, setNewCatMode] = useState<{ parentId: string | null } | null>(null);
@@ -295,25 +297,68 @@ export default function WorkflowManagement() {
   const [slideExecOpen, setSlideExecOpen] = useState(false);
   const [slideExecBatchInput, setSlideExecBatchInput] = useState('');
 
-  // Category filter
-  const filteredWorkflowIds = useMemo(() => {
-    if (!selectedCategory) return workflows.map(w => w.id);
-    const childIds = categories.filter(c => c.parentId === selectedCategory).map(c => c.id);
-    const allCatIds = [selectedCategory, ...childIds];
-    return workflows.filter(w => allCatIds.includes(w.categoryId)).map(w => w.id);
-  }, [selectedCategory, categories]);
+  // Approval slide-over state
+  const [approvalComment, setApprovalComment] = useState('');
 
-  const filteredWorkflows = useMemo(() => workflows.filter(w => filteredWorkflowIds.includes(w.id)), [filteredWorkflowIds]);
-  const filteredInstances = useMemo(() => instances.filter(i => filteredWorkflowIds.includes(i.workflowId)), [filteredWorkflowIds]);
+  // ---- Data ----
 
-  // Tab 1 data
+  // Pending actions from instances assigned to current user
   const myPendingActions = useMemo(
-    () => filteredInstances.filter(i => i.pendingAction?.assigneeId === userId),
-    [filteredInstances, userId]
+    () => instances.filter(i => i.pendingAction?.assigneeId === userId),
+    [userId]
   );
 
+  // Pending approval requests for current user
+  const pendingApprovals = useMemo(
+    () => approvalRequests.filter(a => a.approverId === userId && a.status === 'pending'),
+    [userId]
+  );
+
+  // Unified action items combining approvals + instance actions
+  const actionItems = useMemo<ActionItem[]>(() => {
+    const items: ActionItem[] = [];
+
+    // From approval requests
+    pendingApprovals.forEach(ar => {
+      items.push({
+        id: `approval-${ar.id}`,
+        sourceType: 'approval',
+        actionType: 'approve',
+        title: ar.targetName,
+        subtitle: `${APPROVAL_TYPE_LABELS[ar.approvalType]} | 申請者: ${getUserName(ar.requesterId)}`,
+        badge: '承認',
+        badgeColor: 'bg-yellow-200 text-yellow-800',
+        cardBorderColor: 'border-yellow-300',
+        createdAt: ar.createdAt,
+      });
+    });
+
+    // From instance pending actions
+    myPendingActions.forEach(inst => {
+      if (!inst.pendingAction) return;
+      const wf = workflows.find(w => w.id === inst.workflowId);
+      const actionType = inst.pendingAction.type;
+      const colors = getActionBadgeColor(actionType);
+
+      items.push({
+        id: `instance-${inst.id}`,
+        sourceType: 'instance',
+        actionType,
+        title: wf?.name ?? inst.workflowId,
+        subtitle: inst.pendingAction.label,
+        badge: getActionLabel(actionType),
+        badgeColor: colors.badge,
+        cardBorderColor: colors.border,
+        createdAt: inst.startedAt,
+      });
+    });
+
+    return items;
+  }, [pendingApprovals, myPendingActions]);
+
+  // My instances (started by me or I'm assigned to a node)
   const myInstances = useMemo(() => {
-    return filteredInstances.filter(i => {
+    return instances.filter(i => {
       if (i.startedBy === userId) return true;
       const version = workflowVersions.find(v => v.id === i.versionId);
       if (version) {
@@ -321,58 +366,43 @@ export default function WorkflowManagement() {
       }
       return false;
     });
-  }, [filteredInstances, userId]);
+  }, [userId]);
 
+  // Workflows I own
   const myWorkflows = useMemo(
-    () => filteredWorkflows.filter(w => w.ownerId === userId),
-    [filteredWorkflows, userId]
+    () => workflows.filter(w => w.ownerId === userId),
+    [userId]
   );
 
-  // Tab 2 data
+  // Summary data for overview tab
   const summaryData = useMemo(() => {
-    const batchRunning = filteredInstances.filter(i =>
+    const batchRunning = instances.filter(i =>
       (i.executionMode === 'batch_parallel' || i.executionMode === 'batch_sequential') &&
       i.status !== 'completed' && i.status !== 'stopped'
     ).length;
     return {
-      productionCount: filteredWorkflows.filter(w => w.status === 'production').length,
-      runningInstances: filteredInstances.filter(i => i.status !== 'completed' && i.status !== 'stopped').length,
+      productionCount: workflows.filter(w => w.status === 'production').length,
+      runningInstances: instances.filter(i => i.status !== 'completed' && i.status !== 'stopped').length,
       batchRunning,
       pendingApprovals: approvalRequests.filter(a => a.status === 'pending').length,
       exceptionCount: exceptions.filter(e => e.status === 'open' || e.status === 'assigned' || e.status === 'in_progress').length,
     };
-  }, [filteredWorkflows, filteredInstances]);
+  }, []);
 
-  const groupedByCategory = useMemo(() => {
-    const groups: Record<string, Workflow[]> = {};
-    filteredWorkflows.forEach(w => {
-      const key = w.categoryId;
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(w);
-    });
-    return groups;
-  }, [filteredWorkflows]);
-
-  // Tab 3 data
-  const pendingApprovals = useMemo(
-    () => approvalRequests.filter(a => a.approverId === userId && a.status === 'pending'),
-    [userId]
-  );
-  const pastApprovals = useMemo(
-    () => approvalRequests.filter(a => a.approverId === userId && a.status !== 'pending'),
-    [userId]
-  );
-
-  // Production manual-trigger workflows (for execution candidates)
-  const manualProductionWFs = useMemo(
-    () => workflows.filter(w => w.status === 'production' && w.triggerType === 'manual' && !w.isTemplate),
-    []
-  );
-
-  // Category tree
+  // Category tree data
   const parentCategories = categories.filter(c => c.parentId === null);
 
-  // Handle new category creation
+  // ---- Handlers ----
+
+  const toggleFolder = (catId: string) => {
+    setExpandedFolders(prev => {
+      const next = new Set(prev);
+      if (next.has(catId)) next.delete(catId);
+      else next.add(catId);
+      return next;
+    });
+  };
+
   const handleAddCategory = () => {
     if (!newCatName.trim()) return;
     addCategory(newCatName.trim(), newCatMode?.parentId ?? null, newCatMode?.parentId ? '📂' : '📁');
@@ -380,18 +410,23 @@ export default function WorkflowManagement() {
     setNewCatMode(null);
   };
 
-  // Helper: get instance count including batch items for a workflow
-  function getInstanceCountWithBatch(workflowId: string): string {
-    const wfInstances = instances.filter(i => i.workflowId === workflowId && i.status !== 'completed' && i.status !== 'stopped');
-    const totalBatchItems = wfInstances.reduce((sum, i) => sum + (i.batchTotalCount ?? 0), 0);
-    if (totalBatchItems > 0) {
-      return `${wfInstances.length}件 (バッチ${totalBatchItems}アイテム)`;
+  const handleActionClick = (item: ActionItem) => {
+    if (item.sourceType === 'approval') {
+      const arId = item.id.replace('approval-', '');
+      const ar = approvalRequests.find(a => a.id === arId);
+      if (ar) {
+        setApprovalComment('');
+        setSlideOver({ type: 'approval', data: ar });
+      }
+    } else {
+      const instId = item.id.replace('instance-', '');
+      const inst = instances.find(i => i.id === instId);
+      if (inst) setSlideOver({ type: 'instance', data: inst });
     }
-    return `${wfInstances.length}件`;
-  }
+  };
 
   // ============================================================
-  // Slide-over for instance action
+  // Slide-over: Instance action
   // ============================================================
   function renderInstanceSlideOver(inst: ExecutionInstance) {
     const wf = workflows.find(w => w.id === inst.workflowId);
@@ -451,11 +486,7 @@ export default function WorkflowManagement() {
         {inst.pendingAction && inst.pendingAction.assigneeId === userId && (
           <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg space-y-3">
             <div className="font-semibold text-yellow-800">アクション: {inst.pendingAction.label}</div>
-            <textarea
-              className="w-full border rounded p-2 text-sm"
-              placeholder="コメント（任意）"
-              rows={3}
-            />
+            <textarea className="w-full border rounded p-2 text-sm" placeholder="コメント（任意）" rows={3} />
             <div className="flex gap-2">
               <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">
                 {inst.pendingAction.label}
@@ -471,7 +502,7 @@ export default function WorkflowManagement() {
   }
 
   // ============================================================
-  // Slide-over for workflow detail (Tab 2)
+  // Slide-over: Workflow detail
   // ============================================================
   function renderWorkflowSlideOver(wf: Workflow) {
     const version = getVersionForWorkflow(wf.id);
@@ -523,7 +554,6 @@ export default function WorkflowManagement() {
           </div>
         </div>
 
-        {/* Execution panel (expanded) */}
         {canExecute && slideExecOpen && (
           <div className="border rounded-lg p-4 bg-green-50 border-green-200 space-y-3">
             <div className="text-sm font-semibold text-green-800">実行設定</div>
@@ -594,158 +624,201 @@ export default function WorkflowManagement() {
   }
 
   // ============================================================
-  // Render: Left Panel - Category Tree
+  // Slide-over: Approval detail
   // ============================================================
-  function renderCategoryTree() {
+  function renderApprovalSlideOver(ar: ApprovalRequest) {
+    const deadline = getDeadlineLabel(ar.createdAt);
+
     return (
-      <div className="w-64 min-h-screen bg-white border-r flex-shrink-0">
-        <div className="p-4 border-b flex items-center justify-between">
-          <h2 className="font-bold text-sm text-gray-700">業務カテゴリ</h2>
-          <button
-            onClick={() => { setNewCatMode({ parentId: null }); setNewCatName(''); }}
-            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-            title="親カテゴリを追加"
-          >
-            + 追加
-          </button>
+      <div className="p-6 space-y-5">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-bold">{ar.targetName}</h3>
+          <button onClick={() => setSlideOver(null)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
         </div>
-        <nav className="p-2">
-          <button
-            onClick={() => setSelectedCategory(null)}
-            className={`w-full text-left px-3 py-2 rounded text-sm flex items-center justify-between ${
-              selectedCategory === null ? 'bg-blue-50 text-blue-700 font-semibold' : 'hover:bg-gray-50 text-gray-700'
-            }`}
-          >
-            <span>全て</span>
-            <span className="text-xs text-gray-400">{workflows.length}</span>
-          </button>
-          {parentCategories.map(parent => {
-            const children = categories.filter(c => c.parentId === parent.id);
-            const isSelected = selectedCategory === parent.id;
+
+        {/* Target preview */}
+        <div className="border rounded-lg p-4 bg-gray-50 space-y-3">
+          <div className="text-xs text-gray-500">対象: {ar.targetType}</div>
+
+          {ar.targetType === 'workflow' && (() => {
+            const wf = workflows.find(w => w.id === ar.targetId);
+            const version = wf ? getVersionForWorkflow(wf.id) : undefined;
+            return wf ? (
+              <div className="space-y-3">
+                <p className="text-sm text-gray-600">{wf.description}</p>
+                <div className="flex items-center gap-2">
+                  <span className={`px-2 py-0.5 rounded text-xs ${WF_STATUS_COLORS[wf.status]}`}>
+                    {WF_STATUS_LABELS[wf.status]}
+                  </span>
+                  <span className="text-xs text-gray-500">v{wf.currentVersion}</span>
+                </div>
+                {version && version.nodes.length > 0 && (
+                  <div>
+                    <div className="text-xs text-gray-500 mb-1">フロー図</div>
+                    <MiniFlowDiagram nodes={version.nodes} edges={version.edges} />
+                  </div>
+                )}
+              </div>
+            ) : null;
+          })()}
+
+          {ar.targetType === 'instance' && (() => {
+            const inst = instances.find(i => i.id === ar.targetId);
+            const version = inst ? workflowVersions.find(v => v.id === inst.versionId) : undefined;
+            if (!inst) return null;
+            const isBatch = inst.executionMode === 'batch_parallel' || inst.executionMode === 'batch_sequential';
             return (
-              <div key={parent.id} className="mt-1">
-                <div className="flex items-center group">
-                  <button
-                    onClick={() => setSelectedCategory(parent.id)}
-                    className={`flex-1 text-left px-3 py-2 rounded text-sm flex items-center justify-between ${
-                      isSelected ? 'bg-blue-50 text-blue-700 font-semibold' : 'hover:bg-gray-50 text-gray-700'
-                    }`}
-                  >
-                    <span>{parent.icon} {parent.name}</span>
-                    <span className="text-xs text-gray-400">{getWorkflowCountForCategory(parent.id, categories)}</span>
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setNewCatMode({ parentId: parent.id }); setNewCatName(''); }}
-                    className="opacity-0 group-hover:opacity-100 px-1.5 text-gray-400 hover:text-blue-600 text-xs transition-opacity"
-                    title="子カテゴリを追加"
-                  >
-                    +
-                  </button>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className={`px-2 py-0.5 rounded text-xs ${INSTANCE_STATUS_COLORS[inst.status]}`}>
+                    {INSTANCE_STATUS_LABELS[inst.status]}
+                  </span>
+                  <span className={`px-2 py-0.5 rounded text-xs ${getExecutionModeBadgeColor(inst.executionMode)}`}>
+                    {getExecutionModeLabel(inst.executionMode)}
+                  </span>
                 </div>
-                <div className="ml-4">
-                  {children.map(child => {
-                    const isChildSelected = selectedCategory === child.id;
-                    const count = workflows.filter(w => w.categoryId === child.id).length;
-                    return (
-                      <button
-                        key={child.id}
-                        onClick={() => setSelectedCategory(child.id)}
-                        className={`w-full text-left px-3 py-1.5 rounded text-sm flex items-center justify-between ${
-                          isChildSelected ? 'bg-blue-50 text-blue-700 font-semibold' : 'hover:bg-gray-50 text-gray-500'
-                        }`}
-                      >
-                        <span>{child.icon} {child.name}</span>
-                        <span className="text-xs text-gray-400">{count}</span>
-                      </button>
-                    );
-                  })}
-                  {/* Inline form for new child category */}
-                  {newCatMode && newCatMode.parentId === parent.id && (
-                    <div className="px-2 py-1.5 flex items-center gap-1">
-                      <input
-                        autoFocus
-                        type="text"
-                        value={newCatName}
-                        onChange={e => setNewCatName(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') handleAddCategory(); if (e.key === 'Escape') setNewCatMode(null); }}
-                        placeholder="カテゴリ名"
-                        className="flex-1 min-w-0 border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
-                      />
-                      <button onClick={handleAddCategory} className="text-xs text-blue-600 hover:text-blue-800 font-medium whitespace-nowrap">追加</button>
-                      <button onClick={() => setNewCatMode(null)} className="text-xs text-gray-400 hover:text-gray-600">x</button>
+                {!isBatch && (
+                  <>
+                    <div className="text-sm text-gray-600">現在ノード: <span className="font-medium">{inst.currentNode}</span></div>
+                    <ProgressBar progress={inst.progress} />
+                  </>
+                )}
+                {isBatch && inst.batchItems && (
+                  <div className="space-y-2">
+                    <div className="text-sm text-gray-600">{getBatchSummaryLine(inst.batchItems)}</div>
+                    <ProgressBar
+                      progress={inst.batchTotalCount ? Math.round((inst.batchCompletedCount ?? 0) / inst.batchTotalCount * 100) : 0}
+                      color="bg-green-500"
+                    />
+                    <div className="space-y-1.5">
+                      {inst.batchItems.map(item => (
+                        <div
+                          key={item.id}
+                          className={`p-2 rounded border text-sm ${
+                            item.status === 'waiting_approval'
+                              ? 'border-yellow-400 bg-yellow-50'
+                              : 'border-gray-200 bg-white'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-medium">{item.label}</span>
+                            <span className={`px-2 py-0.5 rounded text-xs ${BATCH_ITEM_STATUS_COLORS[item.status]}`}>
+                              {BATCH_ITEM_STATUS_LABELS[item.status]}
+                            </span>
+                          </div>
+                          <ProgressBar progress={item.progress} height="h-1" />
+                        </div>
+                      ))}
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
+                {version && version.nodes.length > 0 && (
+                  <div>
+                    <div className="text-xs text-gray-500 mb-1">フロー図</div>
+                    <MiniFlowDiagram nodes={version.nodes} edges={version.edges} currentNodeId={inst.currentNodeId} />
+                  </div>
+                )}
               </div>
             );
-          })}
-          {/* Inline form for new parent category */}
-          {newCatMode && newCatMode.parentId === null && (
-            <div className="mt-2 px-2 py-1.5 flex items-center gap-1">
-              <input
-                autoFocus
-                type="text"
-                value={newCatName}
-                onChange={e => setNewCatName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleAddCategory(); if (e.key === 'Escape') setNewCatMode(null); }}
-                placeholder="新規カテゴリ名"
-                className="flex-1 min-w-0 border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
-              />
-              <button onClick={handleAddCategory} className="text-xs text-blue-600 hover:text-blue-800 font-medium whitespace-nowrap">追加</button>
-              <button onClick={() => setNewCatMode(null)} className="text-xs text-gray-400 hover:text-gray-600">x</button>
-            </div>
-          )}
-        </nav>
+          })()}
+
+          {ar.targetType === 'agent' && (() => {
+            const agent = aiAgents.find(a => a.id === ar.targetId);
+            return agent ? (
+              <div className="space-y-3">
+                <p className="text-sm text-gray-600">{agent.description}</p>
+                <div className="flex flex-wrap gap-1">
+                  {agent.capabilities.map(cap => (
+                    <span key={cap} className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-xs">{cap}</span>
+                  ))}
+                </div>
+                <div className="text-sm p-2 bg-white rounded border">{agent.instructions}</div>
+              </div>
+            ) : null;
+          })()}
+        </div>
+
+        {/* Approval action panel */}
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs">
+              {APPROVAL_TYPE_LABELS[ar.approvalType]}
+            </span>
+            <span className={`text-sm font-medium ${deadline.color}`}>{deadline.text}</span>
+          </div>
+          <div className="space-y-1">
+            <div className="text-xs text-gray-500">申請者</div>
+            <div className="text-sm font-medium">{getUserName(ar.requesterId)}</div>
+          </div>
+          <div className="space-y-1">
+            <div className="text-xs text-gray-500">申請理由</div>
+            <div className="text-sm p-3 bg-gray-50 rounded">{ar.reason}</div>
+          </div>
+          <div className="space-y-1">
+            <div className="text-xs text-gray-500">コメント</div>
+            <textarea
+              className="w-full border rounded p-2 text-sm"
+              placeholder="コメントを入力..."
+              rows={3}
+              value={approvalComment}
+              onChange={e => setApprovalComment(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <button className="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-bold">
+              承認
+            </button>
+            <button className="w-full px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-bold">
+              却下
+            </button>
+            <button className="w-full px-4 py-3 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 text-sm font-bold">
+              差し戻し
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
 
   // ============================================================
-  // Render: Tab 1 - 自分の業務
+  // Render: Tab 1 - 自分に関連する業務
   // ============================================================
   function renderMyWorkTab() {
     return (
       <div className="space-y-6">
-        {/* アクション待ち */}
-        <section className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <h3 className="text-sm font-bold text-yellow-800 mb-3 flex items-center gap-2">
-            <span className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse" />
+        {/* Unified action items */}
+        <section className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+          <h3 className="text-sm font-bold text-amber-800 mb-3 flex items-center gap-2">
+            <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
             アクション待ち
-            {myPendingActions.length > 0 && (
-              <span className="px-2 py-0.5 bg-yellow-200 text-yellow-800 rounded-full text-xs">{myPendingActions.length}</span>
+            {actionItems.length > 0 && (
+              <span className="px-2 py-0.5 bg-amber-200 text-amber-800 rounded-full text-xs">{actionItems.length}</span>
             )}
           </h3>
-          {myPendingActions.length === 0 ? (
+          {actionItems.length === 0 ? (
             <div className="p-3 bg-white/60 rounded text-sm text-gray-500">アクション待ちの項目はありません。</div>
           ) : (
             <div className="space-y-2">
-              {myPendingActions.map(inst => {
-                const wf = workflows.find(w => w.id === inst.workflowId);
-                return (
-                  <div
-                    key={inst.id}
-                    onClick={() => setSlideOver({ type: 'instance', data: inst })}
-                    className="p-4 bg-white border border-yellow-300 rounded-lg cursor-pointer hover:shadow-md transition-shadow"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <span className="font-semibold text-sm">{wf?.name}</span>
-                        <span className="text-xs text-gray-500">#{inst.id}</span>
-                        <span className={`px-1.5 py-0.5 rounded text-xs ${getExecutionModeBadgeColor(inst.executionMode)}`}>
-                          {getExecutionModeLabel(inst.executionMode)}
-                        </span>
-                      </div>
-                      <span className="px-2 py-1 bg-yellow-200 text-yellow-800 rounded text-xs font-semibold">
-                        {inst.pendingAction ? getActionLabel(inst.pendingAction.type) : ''}
-                      </span>
+              {actionItems.map(item => (
+                <div
+                  key={item.id}
+                  onClick={() => handleActionClick(item)}
+                  className={`p-4 bg-white border ${item.cardBorderColor} rounded-lg cursor-pointer hover:shadow-md transition-shadow`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="font-semibold text-sm">{item.title}</span>
                     </div>
-                    <div className="mt-2 flex items-center gap-4 text-xs text-gray-600">
-                      <span>アクション: <span className="font-medium text-yellow-800">{inst.pendingAction?.label}</span></span>
-                      <span>経過: {getElapsedTime(inst.startedAt)}</span>
-                    </div>
+                    <span className={`px-2 py-1 rounded text-xs font-semibold ${item.badgeColor}`}>
+                      {item.badge}
+                    </span>
                   </div>
-                );
-              })}
+                  <div className="mt-2 flex items-center gap-4 text-xs text-gray-600">
+                    <span>{item.subtitle}</span>
+                    <span className="text-gray-400">{item.createdAt}</span>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </section>
@@ -769,7 +842,6 @@ export default function WorkflowManagement() {
                     to={`/instances/${inst.id}`}
                     className="block p-4 bg-white border rounded-lg hover:shadow-md transition-shadow"
                   >
-                    {/* Header row */}
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold text-sm">{wf?.name}</span>
@@ -784,7 +856,6 @@ export default function WorkflowManagement() {
                       <span className="text-xs text-gray-400">{inst.startedAt}</span>
                     </div>
 
-                    {/* Single execution details */}
                     {!isBatch && (
                       <>
                         <div className="flex items-center gap-4 text-xs text-gray-600 mb-2">
@@ -800,7 +871,6 @@ export default function WorkflowManagement() {
                       </>
                     )}
 
-                    {/* Batch execution details */}
                     {isBatch && inst.batchItems && (
                       <div className="mt-1">
                         <div className="text-xs text-gray-600 mb-2">{getBatchSummaryLine(inst.batchItems)}</div>
@@ -858,7 +928,47 @@ export default function WorkflowManagement() {
   }
 
   // ============================================================
-  // Render: Tab 2 - 全体状況
+  // Helper: render a workflow row in the folder tree
+  // ============================================================
+  function renderWorkflowRow(wf: Workflow) {
+    const canExecute = wf.status === 'production' && wf.triggerType === 'manual' && !wf.isTemplate;
+    const activeCount = getActiveInstanceCount(wf.id);
+    return (
+      <div
+        key={wf.id}
+        onClick={() => setSlideOver({ type: 'workflow', data: wf })}
+        className="pl-3 pr-4 py-2.5 flex items-center justify-between cursor-pointer hover:bg-blue-50 transition-colors border-t border-gray-100"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-gray-400 flex-shrink-0">📄</span>
+          <span className="text-sm font-medium truncate">{wf.name}</span>
+          <span className={`px-2 py-0.5 rounded text-xs flex-shrink-0 ${WF_STATUS_COLORS[wf.status]}`}>
+            {WF_STATUS_LABELS[wf.status]}
+          </span>
+          {wf.isTemplate && (
+            <span className="px-1.5 py-0.5 bg-purple-100 text-purple-600 rounded text-[10px] flex-shrink-0">テンプレート</span>
+          )}
+        </div>
+        <div className="flex items-center gap-3 text-xs text-gray-500 flex-shrink-0 ml-2">
+          <span className="hidden sm:inline">{TRIGGER_LABELS[wf.triggerType]}</span>
+          {activeCount > 0 && (
+            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">実行中{activeCount}件</span>
+          )}
+          {canExecute && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setSlideOver({ type: 'workflow', data: wf }); setSlideExecOpen(true); setSlideExecMode('single'); }}
+              className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs hover:bg-green-200 font-medium"
+            >
+              実行
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================================
+  // Render: Tab 2 - 全体 (Folder hierarchy)
   // ============================================================
   function renderOverviewTab() {
     return (
@@ -887,399 +997,135 @@ export default function WorkflowManagement() {
           </div>
         </div>
 
-        {/* Category-grouped workflows */}
-        <div className="space-y-4">
-          {Object.entries(groupedByCategory).map(([catId, wfs]) => (
-            <div key={catId} className="border rounded-lg overflow-hidden">
-              <div className="px-4 py-2 bg-gray-50 border-b">
-                <span className="text-sm font-semibold text-gray-700">{getCategoryPath(catId, categories)}</span>
-              </div>
-              <div className="divide-y">
-                {wfs.map(wf => {
-                  const countLabel = getInstanceCountWithBatch(wf.id);
-                  return (
-                    <div
-                      key={wf.id}
-                      onClick={() => setSlideOver({ type: 'workflow', data: wf })}
-                      className="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="text-sm font-medium">{wf.name}</span>
-                        <span className={`px-2 py-0.5 rounded text-xs ${WF_STATUS_COLORS[wf.status]}`}>
-                          {WF_STATUS_LABELS[wf.status]}
-                        </span>
-                        {wf.isTemplate && (
-                          <span className="px-1.5 py-0.5 bg-purple-100 text-purple-600 rounded text-[10px]">テンプレート</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-4 text-xs text-gray-500">
-                        <span>{TRIGGER_LABELS[wf.triggerType]}</span>
-                        {countLabel !== '0件' && (
-                          <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">{countLabel}</span>
-                        )}
-                        {wf.status === 'production' && wf.triggerType === 'manual' && !wf.isTemplate && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setSlideOver({ type: 'workflow', data: wf }); setSlideExecOpen(true); setSlideExecMode('single'); }}
-                            className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs hover:bg-green-200 font-medium"
-                          >
-                            実行
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+        {/* Folder tree */}
+        <div className="border rounded-lg bg-white overflow-hidden">
+          <div className="px-4 py-3 bg-gray-50 border-b flex items-center justify-between">
+            <h3 className="text-sm font-bold text-gray-700">ワークフロー一覧</h3>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { setNewCatMode({ parentId: null }); setNewCatName(''); }}
+                className="px-3 py-1.5 text-xs text-gray-600 bg-white border rounded hover:bg-gray-50 font-medium"
+              >
+                + 新規フォルダ
+              </button>
+              <Link
+                to="/workflows/new"
+                className="px-3 py-1.5 text-xs text-white bg-blue-600 rounded hover:bg-blue-700 font-medium"
+              >
+                + 新規ワークフロー
+              </Link>
             </div>
-          ))}
-          {Object.keys(groupedByCategory).length === 0 && (
-            <div className="p-8 text-center text-gray-400 text-sm">該当するワークフローはありません。</div>
-          )}
-        </div>
-      </div>
-    );
-  }
+          </div>
 
-  // ============================================================
-  // Render: Tab 3 - 承認
-  // ============================================================
-  function renderApprovalTab() {
-    return (
-      <div className="space-y-6">
-        {/* Pending approvals */}
-        <section>
-          <h3 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
-            承認待ちリスト
-            {pendingApprovals.length > 0 && (
-              <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full text-xs">{pendingApprovals.length}</span>
-            )}
-          </h3>
-
-          {approvalSplit ? (
-            // Split view: 60% left / 40% right
-            <div className="flex gap-4">
-              {/* Left: Target state preview (60%) */}
-              <div className="w-3/5 border rounded-lg p-5 space-y-4 bg-white">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-bold text-base">{approvalSplit.targetName}</h4>
-                  <button onClick={() => { setApprovalSplit(null); setApprovalComment(''); }} className="text-gray-400 hover:text-gray-600 text-sm">
-                    &times; 閉じる
-                  </button>
-                </div>
-                <div className="text-xs text-gray-500">対象タイプ: {approvalSplit.targetType}</div>
-
-                {/* Workflow target */}
-                {approvalSplit.targetType === 'workflow' && (() => {
-                  const wf = workflows.find(w => w.id === approvalSplit.targetId);
-                  const version = wf ? getVersionForWorkflow(wf.id) : undefined;
-                  return wf ? (
-                    <div className="space-y-3">
-                      <p className="text-sm text-gray-600">{wf.description}</p>
-                      <div className="flex items-center gap-2">
-                        <span className={`px-2 py-0.5 rounded text-xs ${WF_STATUS_COLORS[wf.status]}`}>
-                          {WF_STATUS_LABELS[wf.status]}
-                        </span>
-                        <span className="text-xs text-gray-500">v{wf.currentVersion}</span>
-                      </div>
-                      {version && version.nodes.length > 0 && (
-                        <div className="mt-2">
-                          <div className="text-xs text-gray-500 mb-1">フロー図</div>
-                          <MiniFlowDiagram nodes={version.nodes} edges={version.edges} />
-                        </div>
-                      )}
-                    </div>
-                  ) : <div className="text-sm text-gray-400">ワークフロー情報が見つかりません。</div>;
-                })()}
-
-                {/* Instance target */}
-                {approvalSplit.targetType === 'instance' && (() => {
-                  const inst = instances.find(i => i.id === approvalSplit.targetId);
-                  const version = inst ? workflowVersions.find(v => v.id === inst.versionId) : undefined;
-                  if (!inst) return <div className="text-sm text-gray-400">インスタンス情報が見つかりません。</div>;
-
-                  const isBatch = inst.executionMode === 'batch_parallel' || inst.executionMode === 'batch_sequential';
-                  return (
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-2">
-                        <span className={`px-2 py-0.5 rounded text-xs ${INSTANCE_STATUS_COLORS[inst.status]}`}>
-                          {INSTANCE_STATUS_LABELS[inst.status]}
-                        </span>
-                        <span className={`px-2 py-0.5 rounded text-xs ${getExecutionModeBadgeColor(inst.executionMode)}`}>
-                          {getExecutionModeLabel(inst.executionMode)}
-                        </span>
-                      </div>
-
-                      {/* Single instance */}
-                      {!isBatch && (
-                        <>
-                          <div className="text-sm text-gray-600">現在ノード: <span className="font-medium">{inst.currentNode}</span></div>
-                          <ProgressBar progress={inst.progress} />
-                          {inst.pendingAction && (
-                            <div className="text-sm text-gray-600">担当: {getUserName(inst.pendingAction.assigneeId)}</div>
-                          )}
-                        </>
-                      )}
-
-                      {/* Batch instance - show items with highlighting */}
-                      {isBatch && inst.batchItems && (
-                        <div className="space-y-3">
-                          <div className="text-sm text-gray-600">{getBatchSummaryLine(inst.batchItems)}</div>
-                          <ProgressBar
-                            progress={inst.batchTotalCount ? Math.round((inst.batchCompletedCount ?? 0) / inst.batchTotalCount * 100) : 0}
-                            color="bg-green-500"
-                          />
-                          <div className="space-y-2">
-                            {inst.batchItems.map(item => {
-                              const isApprovalItem = item.status === 'waiting_approval';
-                              return (
-                                <div
-                                  key={item.id}
-                                  className={`p-3 rounded-lg border ${
-                                    isApprovalItem
-                                      ? 'border-yellow-400 bg-yellow-50 ring-1 ring-yellow-300'
-                                      : 'border-gray-200 bg-gray-50'
-                                  }`}
-                                >
-                                  <div className="flex items-center justify-between mb-1">
-                                    <span className="font-medium text-sm">{item.label}</span>
-                                    <span className={`px-2 py-0.5 rounded text-xs ${BATCH_ITEM_STATUS_COLORS[item.status]}`}>
-                                      {BATCH_ITEM_STATUS_LABELS[item.status]}
-                                    </span>
-                                  </div>
-                                  {isApprovalItem && (
-                                    <div className="text-xs text-yellow-700 font-medium mt-1">
-                                      {item.label}の{item.currentNode ?? '処理'}が承認待ちです
-                                    </div>
-                                  )}
-                                  {item.currentNode && (
-                                    <div className="text-xs text-gray-500">ノード: {item.currentNode}</div>
-                                  )}
-                                  <ProgressBar progress={item.progress} height="h-1.5" color={
-                                    item.status === 'completed' ? 'bg-green-500' :
-                                    item.status === 'waiting_approval' ? 'bg-yellow-500' :
-                                    'bg-blue-500'
-                                  } />
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {version && version.nodes.length > 0 && (
-                        <div className="mt-2">
-                          <div className="text-xs text-gray-500 mb-1">フロー図</div>
-                          <MiniFlowDiagram nodes={version.nodes} edges={version.edges} currentNodeId={inst.currentNodeId} />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-
-                {/* Agent target */}
-                {approvalSplit.targetType === 'agent' && (() => {
-                  const agent = aiAgents.find(a => a.id === approvalSplit.targetId);
-                  return agent ? (
-                    <div className="space-y-3">
-                      <p className="text-sm text-gray-600">{agent.description}</p>
-                      <div>
-                        <div className="text-xs text-gray-500 mb-1">能力</div>
-                        <div className="flex flex-wrap gap-1">
-                          {agent.capabilities.map(cap => (
-                            <span key={cap} className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-xs">{cap}</span>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="text-xs text-gray-500">バージョン: v{agent.version}</div>
-                      <div>
-                        <div className="text-xs text-gray-500 mb-1">指示内容</div>
-                        <div className="text-sm p-2 bg-gray-50 rounded">{agent.instructions}</div>
-                      </div>
-                      <div className="p-3 bg-orange-50 border border-orange-200 rounded text-sm text-orange-800">
-                        変更内容: {approvalSplit.reason}
-                      </div>
-                    </div>
-                  ) : <div className="text-sm text-gray-400">エージェント情報が見つかりません。</div>;
-                })()}
-              </div>
-
-              {/* Right: Approval action panel (40%) */}
-              <div className="w-2/5 border rounded-lg p-5 space-y-4 bg-white">
-                <h4 className="font-bold text-base">承認アクション</h4>
-                <div className="space-y-1">
-                  <div className="text-xs text-gray-500">承認種別</div>
-                  <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs">
-                    {APPROVAL_TYPE_LABELS[approvalSplit.approvalType]}
-                  </span>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-xs text-gray-500">申請者</div>
-                  <div className="text-sm font-medium">{getUserName(approvalSplit.requesterId)}</div>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-xs text-gray-500">申請理由</div>
-                  <div className="text-sm p-3 bg-gray-50 rounded">{approvalSplit.reason}</div>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-xs text-gray-500">期限</div>
-                  {(() => {
-                    const dl = getDeadlineLabel(approvalSplit.createdAt);
-                    return <div className={`text-sm font-medium ${dl.color}`}>{dl.text}</div>;
-                  })()}
-                </div>
-                <div className="space-y-1">
-                  <div className="text-xs text-gray-500">コメント</div>
-                  <textarea
-                    className="w-full border rounded p-2 text-sm"
-                    placeholder="コメントを入力..."
-                    rows={4}
-                    value={approvalComment}
-                    onChange={e => setApprovalComment(e.target.value)}
-                  />
-                </div>
-                <div className="flex flex-col gap-2 pt-2">
-                  <button className="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-bold">
-                    承認
-                  </button>
-                  <button className="w-full px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-bold">
-                    却下
-                  </button>
-                  <button className="w-full px-4 py-3 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 text-sm font-bold">
-                    差し戻し
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : (
-            // List view
-            <div className="space-y-2">
-              {pendingApprovals.length === 0 ? (
-                <div className="p-4 bg-gray-50 rounded text-sm text-gray-500">承認待ちの項目はありません。</div>
-              ) : (
-                pendingApprovals.map(ar => {
-                  const deadline = getDeadlineLabel(ar.createdAt);
-                  return (
-                    <div
-                      key={ar.id}
-                      onClick={() => { setApprovalSplit(ar); setApprovalComment(''); }}
-                      className="p-4 bg-white border rounded-lg cursor-pointer hover:shadow-md transition-shadow"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <span className="font-semibold text-sm">{ar.targetName}</span>
-                          <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">
-                            {APPROVAL_TYPE_LABELS[ar.approvalType]}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className={`text-xs font-medium ${deadline.color}`}>{deadline.text}</span>
-                        </div>
-                      </div>
-                      <div className="mt-2 flex items-center gap-4 text-xs text-gray-500">
-                        <span>申請者: {getUserName(ar.requesterId)}</span>
-                        <span>申請日: {ar.createdAt}</span>
-                        <span>対象: {ar.targetType}</span>
-                      </div>
-                      {/* Target preview snippet */}
-                      {ar.targetType === 'instance' && (() => {
-                        const inst = instances.find(i => i.id === ar.targetId);
-                        if (!inst || !inst.batchItems) return null;
-                        const waitingItems = inst.batchItems.filter(bi => bi.status === 'waiting_approval');
-                        if (waitingItems.length === 0) return null;
-                        return (
-                          <div className="mt-2 text-xs text-yellow-700 bg-yellow-50 rounded px-2 py-1">
-                            {waitingItems.map(wi => wi.label).join(', ')} の承認が必要
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  );
-                })
-              )}
+          {/* New parent category inline form */}
+          {newCatMode && newCatMode.parentId === null && (
+            <div className="px-4 py-2 bg-blue-50 border-b flex items-center gap-2">
+              <span className="text-gray-400">📁</span>
+              <input
+                autoFocus
+                type="text"
+                value={newCatName}
+                onChange={e => setNewCatName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleAddCategory(); if (e.key === 'Escape') setNewCatMode(null); }}
+                placeholder="新規カテゴリ名"
+                className="flex-1 min-w-0 border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              />
+              <button onClick={handleAddCategory} className="text-xs text-blue-600 hover:text-blue-800 font-medium">追加</button>
+              <button onClick={() => setNewCatMode(null)} className="text-xs text-gray-400 hover:text-gray-600">キャンセル</button>
             </div>
           )}
-        </section>
 
-        {/* Execution candidates */}
-        <section className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <h3 className="text-sm font-bold text-blue-800 mb-3 flex items-center gap-2">
-            実行候補
-            {manualProductionWFs.length > 0 && (
-              <span className="px-2 py-0.5 bg-blue-200 text-blue-800 rounded-full text-xs">{manualProductionWFs.length}</span>
-            )}
-          </h3>
-          <div className="space-y-2">
-            {manualProductionWFs.length === 0 ? (
-              <div className="p-3 bg-white/60 rounded text-sm text-gray-500">実行可能なワークフローはありません。</div>
-            ) : (
-              manualProductionWFs.map(wf => {
-                const activeCount = getActiveInstanceCount(wf.id);
-                return (
-                  <div
-                    key={wf.id}
-                    className="p-3 bg-white border border-blue-200 rounded-lg flex items-center justify-between hover:shadow-sm transition-shadow"
-                  >
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-sm">{wf.name}</span>
-                        <span className="text-xs text-gray-400">{getCategoryPath(wf.categoryId, categories)}</span>
-                      </div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        {activeCount > 0 && <span className="text-blue-600">実行中: {activeCount}件</span>}
-                      </div>
-                    </div>
+          <div>
+            {parentCategories.map(parent => {
+              const children = categories.filter(c => c.parentId === parent.id);
+              const isExpanded = expandedFolders.has(parent.id);
+              const totalCount = getWorkflowCountForCategory(parent.id, categories);
+              const directWFs = workflows.filter(w => w.categoryId === parent.id);
+
+              return (
+                <div key={parent.id} className="border-b last:border-b-0">
+                  {/* Parent folder row */}
+                  <div className="group flex items-center">
                     <button
-                      onClick={() => { setSlideOver({ type: 'workflow', data: wf }); setSlideExecOpen(true); setSlideExecMode('single'); }}
-                      className="px-3 py-1.5 bg-green-600 text-white rounded text-xs hover:bg-green-700 font-medium whitespace-nowrap"
+                      onClick={() => toggleFolder(parent.id)}
+                      className="flex-1 px-4 py-2.5 flex items-center gap-2 hover:bg-gray-50 transition-colors text-left"
                     >
-                      実行
+                      <span className="text-xs text-gray-400 w-4">{isExpanded ? '▼' : '▶'}</span>
+                      <span className="text-base">{parent.icon}</span>
+                      <span className="text-sm font-semibold text-gray-700">{parent.name}</span>
+                      <span className="text-xs text-gray-400 ml-1">{totalCount}</span>
+                    </button>
+                    <button
+                      onClick={() => { setNewCatMode({ parentId: parent.id }); setNewCatName(''); }}
+                      className="opacity-0 group-hover:opacity-100 px-2 py-1 mr-2 text-xs text-gray-400 hover:text-blue-600 transition-opacity"
+                      title="子フォルダを追加"
+                    >
+                      + フォルダ
                     </button>
                   </div>
-                );
-              })
+
+                  {isExpanded && (
+                    <div className="bg-gray-50/30">
+                      {/* Direct workflows under parent */}
+                      {directWFs.length > 0 && (
+                        <div className="ml-6">
+                          {directWFs.map(wf => renderWorkflowRow(wf))}
+                        </div>
+                      )}
+
+                      {/* Child categories */}
+                      {children.map(child => {
+                        const childExpanded = expandedFolders.has(child.id);
+                        const childWFs = workflows.filter(w => w.categoryId === child.id);
+
+                        return (
+                          <div key={child.id}>
+                            <button
+                              onClick={() => toggleFolder(child.id)}
+                              className="w-full ml-6 px-4 py-2 flex items-center gap-2 hover:bg-gray-100 transition-colors text-left"
+                            >
+                              <span className="text-xs text-gray-400 w-4">{childExpanded ? '▼' : '▶'}</span>
+                              <span className="text-base">{child.icon}</span>
+                              <span className="text-sm font-medium text-gray-600">{child.name}</span>
+                              <span className="text-xs text-gray-400 ml-1">{childWFs.length}</span>
+                            </button>
+                            {childExpanded && childWFs.length > 0 && (
+                              <div className="ml-12">
+                                {childWFs.map(wf => renderWorkflowRow(wf))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                      {/* New child category inline form */}
+                      {newCatMode && newCatMode.parentId === parent.id && (
+                        <div className="ml-10 px-4 py-2 flex items-center gap-2">
+                          <span className="text-gray-400">📂</span>
+                          <input
+                            autoFocus
+                            type="text"
+                            value={newCatName}
+                            onChange={e => setNewCatName(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') handleAddCategory(); if (e.key === 'Escape') setNewCatMode(null); }}
+                            placeholder="サブカテゴリ名"
+                            className="flex-1 min-w-0 border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                          />
+                          <button onClick={handleAddCategory} className="text-xs text-blue-600 hover:text-blue-800 font-medium">追加</button>
+                          <button onClick={() => setNewCatMode(null)} className="text-xs text-gray-400 hover:text-gray-600">x</button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {parentCategories.length === 0 && (
+              <div className="p-8 text-center text-gray-400 text-sm">カテゴリがありません。「新規フォルダ」で追加してください。</div>
             )}
           </div>
-        </section>
-
-        {/* Approval history */}
-        <section>
-          <button
-            onClick={() => setShowApprovalHistory(!showApprovalHistory)}
-            className="text-sm text-gray-600 hover:text-gray-800 flex items-center gap-1"
-          >
-            <span className={`transform transition-transform ${showApprovalHistory ? 'rotate-90' : ''}`}>▶</span>
-            承認履歴 ({pastApprovals.length})
-          </button>
-          {showApprovalHistory && (
-            <div className="mt-2 space-y-2">
-              {pastApprovals.length === 0 ? (
-                <div className="p-4 bg-gray-50 rounded text-sm text-gray-500">承認履歴はありません。</div>
-              ) : (
-                pastApprovals.map(ar => (
-                  <div key={ar.id} className="p-3 bg-gray-50 border rounded-lg text-sm">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{ar.targetName}</span>
-                        <span className={`px-2 py-0.5 rounded text-xs ${
-                          ar.status === 'approved' ? 'bg-green-100 text-green-700' :
-                          ar.status === 'rejected' ? 'bg-red-100 text-red-700' :
-                          ar.status === 'returned' ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-gray-100 text-gray-700'
-                        }`}>
-                          {APPROVAL_STATUS_LABELS[ar.status]}
-                        </span>
-                      </div>
-                      <span className="text-xs text-gray-400">{ar.createdAt}</span>
-                    </div>
-                    {ar.comment && (
-                      <div className="mt-1 text-xs text-gray-500">コメント: {ar.comment}</div>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-        </section>
+        </div>
       </div>
     );
   }
@@ -1288,72 +1134,64 @@ export default function WorkflowManagement() {
   // Main render
   // ============================================================
   const tabs = [
-    { key: 'my' as const, label: '自分の業務' },
-    { key: 'overview' as const, label: '全体状況' },
-    { key: 'approval' as const, label: '承認', badge: pendingApprovals.length },
+    { key: 'my' as const, label: '自分に関連する業務', badge: actionItems.length },
+    { key: 'overview' as const, label: '全体' },
   ];
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      {/* Left panel */}
-      {renderCategoryTree()}
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b px-6 py-4 flex items-center justify-between">
+        <h1 className="text-xl font-bold text-gray-800">ワークフロー管理</h1>
+        <div className="flex items-center gap-3">
+          <Link
+            to="/workflows/new"
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+          >
+            新規ワークフロー作成
+          </Link>
+        </div>
+      </div>
 
-      {/* Right main area */}
-      <div className="flex-1 min-w-0">
-        {/* Header */}
-        <div className="bg-white border-b px-6 py-4 flex items-center justify-between">
-          <h1 className="text-xl font-bold text-gray-800">ワークフロー管理</h1>
-          <div className="flex items-center gap-3">
-            <Link
-              to="/workflows/new"
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+      {/* Tabs */}
+      <div className="bg-white border-b px-6">
+        <div className="flex gap-1">
+          {tabs.map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === tab.key
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
             >
-              新規ワークフロー作成
-            </Link>
-          </div>
+              {tab.label}
+              {tab.badge !== undefined && tab.badge > 0 && (
+                <span className="ml-1.5 px-1.5 py-0.5 bg-red-500 text-white rounded-full text-[10px]">{tab.badge}</span>
+              )}
+            </button>
+          ))}
         </div>
+      </div>
 
-        {/* Tabs */}
-        <div className="bg-white border-b px-6">
-          <div className="flex gap-1">
-            {tabs.map(tab => (
-              <button
-                key={tab.key}
-                onClick={() => { setActiveTab(tab.key); setApprovalSplit(null); }}
-                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === tab.key
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                {tab.label}
-                {tab.badge !== undefined && tab.badge > 0 && (
-                  <span className="ml-1.5 px-1.5 py-0.5 bg-red-500 text-white rounded-full text-[10px]">{tab.badge}</span>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Tab content */}
-        <div className="p-6">
-          {activeTab === 'my' && renderMyWorkTab()}
-          {activeTab === 'overview' && renderOverviewTab()}
-          {activeTab === 'approval' && renderApprovalTab()}
-        </div>
+      {/* Tab content */}
+      <div className="p-6 max-w-6xl mx-auto">
+        {activeTab === 'my' && renderMyWorkTab()}
+        {activeTab === 'overview' && renderOverviewTab()}
       </div>
 
       {/* Slide-over */}
       {slideOver && (
         <div className="fixed inset-0 z-50 flex justify-end">
-          <div className="absolute inset-0 bg-black/20" onClick={() => setSlideOver(null)} />
+          <div className="absolute inset-0 bg-black/20" onClick={() => { setSlideOver(null); setSlideExecOpen(false); }} />
           <div className="relative w-[520px] bg-white shadow-xl overflow-y-auto">
             {slideOver.type === 'instance' && renderInstanceSlideOver(slideOver.data as ExecutionInstance)}
             {slideOver.type === 'workflow' && renderWorkflowSlideOver(slideOver.data as Workflow)}
+            {slideOver.type === 'approval' && renderApprovalSlideOver(slideOver.data as ApprovalRequest)}
           </div>
         </div>
       )}
-
     </div>
   );
 }

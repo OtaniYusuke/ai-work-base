@@ -735,7 +735,7 @@ export default function InstanceDetail() {
           )}
         </div>
         <Link
-          to="/instances"
+          to="/"
           className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
         >
           戻る

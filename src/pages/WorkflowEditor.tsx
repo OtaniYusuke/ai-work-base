@@ -1,12 +1,12 @@
 import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useCategories } from '../context/CategoryContext';
 import {
   workflows,
   workflowVersions,
   users,
   aiAgents,
   dataSources,
-  categories,
   NODE_TYPE_LABELS,
   NODE_TYPE_COLORS,
   TRIGGER_LABELS,
@@ -57,22 +57,10 @@ function getAssigneeLabel(node: WorkflowNode): string {
   return getUserName(node.assignee);
 }
 
-function getCategoryOptions() {
-  const parents = categories.filter((c) => c.parentId === null);
-  const result: { id: string; label: string }[] = [];
-  parents.forEach((p) => {
-    result.push({ id: p.id, label: `${p.icon} ${p.name}` });
-    const children = categories.filter((c) => c.parentId === p.id);
-    children.forEach((ch) => {
-      result.push({ id: ch.id, label: `  ${ch.icon} ${p.name} > ${ch.name}` });
-    });
-  });
-  return result;
-}
-
 export default function WorkflowEditor() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { categories, addCategory } = useCategories();
   const isNew = !id || id === 'new';
 
   const workflow = isNew ? null : workflows.find((w) => w.id === id);
@@ -94,13 +82,27 @@ export default function WorkflowEditor() {
   );
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  const [newCatMode, setNewCatMode] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [newCatParent, setNewCatParent] = useState('');
 
   const selectedNode = useMemo(
     () => nodes.find((n) => n.id === selectedNodeId) ?? null,
     [nodes, selectedNodeId]
   );
 
-  const categoryOptions = useMemo(() => getCategoryOptions(), []);
+  const categoryOptions = useMemo(() => {
+    const parents = categories.filter((c) => c.parentId === null);
+    const result: { id: string; label: string }[] = [];
+    parents.forEach((p) => {
+      result.push({ id: p.id, label: `${p.icon} ${p.name}` });
+      const children = categories.filter((c) => c.parentId === p.id);
+      children.forEach((ch) => {
+        result.push({ id: ch.id, label: `  ${ch.icon} ${p.name} > ${ch.name}` });
+      });
+    });
+    return result;
+  }, [categories]);
 
   // --- helpers ---
   const updateNodeField = (field: string, value: unknown) => {
@@ -151,7 +153,7 @@ export default function WorkflowEditor() {
       {/* Top bar */}
       <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-gray-200 bg-white px-4 py-2 shadow-sm">
         <button
-          onClick={() => navigate(isNew ? '/workflows' : `/workflows/${id}`)}
+          onClick={() => navigate(isNew ? '/' : `/workflows/${id}`)}
           className="rounded px-2 py-1 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700"
         >
           &larr; 戻る
@@ -164,16 +166,71 @@ export default function WorkflowEditor() {
         />
 
         {/* Category selector */}
-        <select
-          value={categoryId}
-          onChange={(e) => setCategoryId(e.target.value)}
-          className="rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="">カテゴリ選択</option>
-          {categoryOptions.map((opt) => (
-            <option key={opt.id} value={opt.id}>{opt.label}</option>
-          ))}
-        </select>
+        {!newCatMode ? (
+          <div className="flex items-center gap-1">
+            <select
+              value={categoryId}
+              onChange={(e) => {
+                if (e.target.value === '__new__') { setNewCatMode(true); setNewCatName(''); setNewCatParent(''); }
+                else setCategoryId(e.target.value);
+              }}
+              className="rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">カテゴリ選択</option>
+              {categoryOptions.map((opt) => (
+                <option key={opt.id} value={opt.id}>{opt.label}</option>
+              ))}
+              <option value="__new__">+ 新規カテゴリ作成...</option>
+            </select>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1">
+            <select
+              value={newCatParent}
+              onChange={(e) => setNewCatParent(e.target.value)}
+              className="rounded border border-gray-300 px-1.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+            >
+              <option value="">親なし（トップ）</option>
+              {categories.filter(c => c.parentId === null).map(c => (
+                <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+              ))}
+            </select>
+            <input
+              autoFocus
+              type="text"
+              value={newCatName}
+              onChange={(e) => setNewCatName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newCatName.trim()) {
+                  const created = addCategory(newCatName.trim(), newCatParent || null, newCatParent ? '📂' : '📁');
+                  setCategoryId(created.id);
+                  setNewCatMode(false);
+                }
+                if (e.key === 'Escape') setNewCatMode(false);
+              }}
+              placeholder="カテゴリ名"
+              className="w-32 rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+            />
+            <button
+              onClick={() => {
+                if (newCatName.trim()) {
+                  const created = addCategory(newCatName.trim(), newCatParent || null, newCatParent ? '📂' : '📁');
+                  setCategoryId(created.id);
+                  setNewCatMode(false);
+                }
+              }}
+              className="rounded bg-blue-600 px-2 py-1.5 text-xs text-white hover:bg-blue-700"
+            >
+              追加
+            </button>
+            <button
+              onClick={() => setNewCatMode(false)}
+              className="text-xs text-gray-400 hover:text-gray-600"
+            >
+              x
+            </button>
+          </div>
+        )}
 
         {/* Trigger type */}
         <div className="flex items-center gap-1.5">

@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { useCategories } from '../context/CategoryContext';
 import {
   workflows,
   workflowVersions,
   instances,
   logs,
-  categories,
   getUserName,
   getAgentName,
   TRIGGER_LABELS,
@@ -59,7 +59,7 @@ const TRIGGER_BADGE_COLORS: Record<TriggerType, string> = {
   api: 'bg-orange-100 text-orange-700',
 };
 
-function getCategoryPath(categoryId: string): string {
+function getCategoryPath(categoryId: string, categories: { id: string; name: string; parentId: string | null }[]): string {
   const cat = categories.find((c) => c.id === categoryId);
   if (!cat) return '';
   if (cat.parentId) {
@@ -242,6 +242,10 @@ function FlowDiagram({ nodes, edges }: { nodes: WorkflowNode[]; edges: WorkflowE
 export default function WorkflowDetail() {
   const { id } = useParams<{ id: string }>();
   const [activeTab, setActiveTab] = useState<TabId>('flow');
+  const { categories, addCategory } = useCategories();
+  const [newCatMode, setNewCatMode] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [newCatParent, setNewCatParent] = useState('');
 
   const workflow = workflows.find((w) => w.id === id);
   if (!workflow) {
@@ -260,7 +264,7 @@ export default function WorkflowDetail() {
   const wfInstances = instances.filter((inst) => inst.workflowId === id);
   const wfLogs = logs.filter((l) => l.workflowId === id).sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
-  const categoryPath = getCategoryPath(workflow.categoryId);
+  const categoryPath = getCategoryPath(workflow.categoryId, categories);
   const productionVersion = versions.find((v) => v.status === 'approved');
 
   const handleExecute = () => {
@@ -574,7 +578,57 @@ export default function WorkflowDetail() {
                 </div>
                 <div>
                   <dt className="text-xs font-medium text-gray-500">カテゴリ</dt>
-                  <dd className="mt-1 text-sm text-gray-900">{categoryPath || '-'}</dd>
+                  <dd className="mt-1 text-sm text-gray-900 flex items-center gap-2">
+                    {categoryPath || '-'}
+                    {!newCatMode ? (
+                      <button
+                        onClick={() => { setNewCatMode(true); setNewCatName(''); setNewCatParent(''); }}
+                        className="text-xs text-blue-600 hover:text-blue-800"
+                      >
+                        + 新規作成
+                      </button>
+                    ) : (
+                      <span className="flex items-center gap-1">
+                        <select
+                          value={newCatParent}
+                          onChange={(e) => setNewCatParent(e.target.value)}
+                          className="rounded border border-gray-300 px-1 py-0.5 text-xs"
+                        >
+                          <option value="">親なし</option>
+                          {categories.filter(c => c.parentId === null).map(c => (
+                            <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+                          ))}
+                        </select>
+                        <input
+                          autoFocus
+                          type="text"
+                          value={newCatName}
+                          onChange={(e) => setNewCatName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && newCatName.trim()) {
+                              addCategory(newCatName.trim(), newCatParent || null, newCatParent ? '📂' : '📁');
+                              setNewCatMode(false);
+                            }
+                            if (e.key === 'Escape') setNewCatMode(false);
+                          }}
+                          placeholder="カテゴリ名"
+                          className="w-24 rounded border border-gray-300 px-1.5 py-0.5 text-xs"
+                        />
+                        <button
+                          onClick={() => {
+                            if (newCatName.trim()) {
+                              addCategory(newCatName.trim(), newCatParent || null, newCatParent ? '📂' : '📁');
+                              setNewCatMode(false);
+                            }
+                          }}
+                          className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                        >
+                          追加
+                        </button>
+                        <button onClick={() => setNewCatMode(false)} className="text-xs text-gray-400 hover:text-gray-600">x</button>
+                      </span>
+                    )}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-xs font-medium text-gray-500">現在のバージョン</dt>

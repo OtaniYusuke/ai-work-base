@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { CategoryProvider } from './context/CategoryContext';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import WorkflowManagement from './pages/WorkflowManagement';
@@ -39,10 +40,12 @@ function ProtectedRoutes() {
 function App() {
   return (
     <AuthProvider>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/*" element={<ProtectedRoutes />} />
-      </Routes>
+      <CategoryProvider>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/*" element={<ProtectedRoutes />} />
+        </Routes>
+      </CategoryProvider>
     </AuthProvider>
   );
 }

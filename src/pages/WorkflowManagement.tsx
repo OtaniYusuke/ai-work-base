@@ -1,8 +1,8 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useCategories } from '../context/CategoryContext';
 import {
-  categories,
   workflows,
   workflowVersions,
   instances,
@@ -40,18 +40,18 @@ import type {
 // Helper functions
 // ============================================================
 
-function getCategoryPath(catId: string): string {
-  const cat = categories.find(c => c.id === catId);
+function getCategoryPath(catId: string, cats: BusinessCategory[]): string {
+  const cat = cats.find(c => c.id === catId);
   if (!cat) return '';
   if (cat.parentId) {
-    const parent = categories.find(c => c.id === cat.parentId);
+    const parent = cats.find(c => c.id === cat.parentId);
     return parent ? `${parent.icon} ${parent.name} > ${cat.icon} ${cat.name}` : `${cat.icon} ${cat.name}`;
   }
   return `${cat.icon} ${cat.name}`;
 }
 
-function getWorkflowCountForCategory(catId: string): number {
-  const childIds = categories.filter(c => c.parentId === catId).map(c => c.id);
+function getWorkflowCountForCategory(catId: string, cats: BusinessCategory[]): number {
+  const childIds = cats.filter(c => c.parentId === catId).map(c => c.id);
   const allIds = [catId, ...childIds];
   return workflows.filter(w => allIds.includes(w.categoryId)).length;
 }
@@ -274,6 +274,7 @@ function BatchItemsList({ items, highlightItemId }: { items: BatchItem[]; highli
 // ============================================================
 export default function WorkflowManagement() {
   const { currentUser } = useAuth();
+  const { categories, addCategory } = useCategories();
   const userId = currentUser?.id ?? 'u1';
 
   // State
@@ -283,9 +284,16 @@ export default function WorkflowManagement() {
   const [approvalSplit, setApprovalSplit] = useState<ApprovalRequest | null>(null);
   const [approvalComment, setApprovalComment] = useState('');
   const [showApprovalHistory, setShowApprovalHistory] = useState(false);
-  const [newExecDropdown, setNewExecDropdown] = useState(false);
-  const [execMode, setExecMode] = useState<'single' | 'batch_parallel' | 'batch_sequential'>('single');
   const [expandedBatchInstances, setExpandedBatchInstances] = useState<Set<string>>(new Set());
+
+  // Category creation state
+  const [newCatMode, setNewCatMode] = useState<{ parentId: string | null } | null>(null);
+  const [newCatName, setNewCatName] = useState('');
+
+  // Workflow execution state (for slide-over)
+  const [slideExecMode, setSlideExecMode] = useState<'single' | 'batch_parallel' | 'batch_sequential'>('single');
+  const [slideExecOpen, setSlideExecOpen] = useState(false);
+  const [slideExecBatchInput, setSlideExecBatchInput] = useState('');
 
   // Category filter
   const filteredWorkflowIds = useMemo(() => {
@@ -293,7 +301,7 @@ export default function WorkflowManagement() {
     const childIds = categories.filter(c => c.parentId === selectedCategory).map(c => c.id);
     const allCatIds = [selectedCategory, ...childIds];
     return workflows.filter(w => allCatIds.includes(w.categoryId)).map(w => w.id);
-  }, [selectedCategory]);
+  }, [selectedCategory, categories]);
 
   const filteredWorkflows = useMemo(() => workflows.filter(w => filteredWorkflowIds.includes(w.id)), [filteredWorkflowIds]);
   const filteredInstances = useMemo(() => instances.filter(i => filteredWorkflowIds.includes(i.workflowId)), [filteredWorkflowIds]);
@@ -355,7 +363,7 @@ export default function WorkflowManagement() {
     [userId]
   );
 
-  // Production manual-trigger workflows for "new execution" dropdown
+  // Production manual-trigger workflows (for execution candidates)
   const manualProductionWFs = useMemo(
     () => workflows.filter(w => w.status === 'production' && w.triggerType === 'manual' && !w.isTemplate),
     []
@@ -363,6 +371,14 @@ export default function WorkflowManagement() {
 
   // Category tree
   const parentCategories = categories.filter(c => c.parentId === null);
+
+  // Handle new category creation
+  const handleAddCategory = () => {
+    if (!newCatName.trim()) return;
+    addCategory(newCatName.trim(), newCatMode?.parentId ?? null, newCatMode?.parentId ? '📂' : '📁');
+    setNewCatName('');
+    setNewCatMode(null);
+  };
 
   // Helper: get instance count including batch items for a workflow
   function getInstanceCountWithBatch(workflowId: string): string {
@@ -460,11 +476,21 @@ export default function WorkflowManagement() {
   function renderWorkflowSlideOver(wf: Workflow) {
     const version = getVersionForWorkflow(wf.id);
     const activeInsts = instances.filter(i => i.workflowId === wf.id && i.status !== 'completed' && i.status !== 'stopped');
+    const canExecute = wf.status === 'production' && wf.triggerType === 'manual';
+
+    const handleExecute = () => {
+      const modeLabel = slideExecMode === 'single' ? '単体' : slideExecMode === 'batch_parallel' ? 'バッチ（並列）' : 'バッチ（順次）';
+      alert(`「${wf.name}」を${modeLabel}モードで実行しました（モック）`);
+      setSlideExecOpen(false);
+      setSlideExecBatchInput('');
+      setSlideOver(null);
+    };
+
     return (
       <div className="p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold">{wf.name}</h3>
-          <button onClick={() => setSlideOver(null)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+          <button onClick={() => { setSlideOver(null); setSlideExecOpen(false); }} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
         </div>
         <p className="text-sm text-gray-600">{wf.description}</p>
         <div className="flex items-center gap-2 flex-wrap">
@@ -485,10 +511,58 @@ export default function WorkflowManagement() {
           <div className="flex flex-wrap gap-2">
             <Link to={`/workflows/${wf.id}`} className="px-3 py-1.5 bg-gray-100 rounded text-sm hover:bg-gray-200">詳細</Link>
             <Link to={`/workflows/${wf.id}/edit`} className="px-3 py-1.5 bg-gray-100 rounded text-sm hover:bg-gray-200">編集</Link>
-            <button className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded text-sm hover:bg-blue-100">実行</button>
+            {canExecute && (
+              <button
+                onClick={() => { setSlideExecOpen(!slideExecOpen); setSlideExecMode('single'); setSlideExecBatchInput(''); }}
+                className="px-3 py-1.5 bg-green-600 text-white rounded text-sm hover:bg-green-700 font-medium"
+              >
+                実行
+              </button>
+            )}
             <Link to={`/workflows/${wf.id}/versions`} className="px-3 py-1.5 bg-gray-100 rounded text-sm hover:bg-gray-200">バージョン管理</Link>
           </div>
         </div>
+
+        {/* Execution panel (expanded) */}
+        {canExecute && slideExecOpen && (
+          <div className="border rounded-lg p-4 bg-green-50 border-green-200 space-y-3">
+            <div className="text-sm font-semibold text-green-800">実行設定</div>
+            <div className="flex gap-1 bg-white rounded-lg p-1">
+              {(['single', 'batch_parallel', 'batch_sequential'] as const).map(mode => (
+                <button
+                  key={mode}
+                  onClick={() => setSlideExecMode(mode)}
+                  className={`flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors ${
+                    slideExecMode === mode ? 'bg-green-600 text-white shadow' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {mode === 'single' ? '単体実行' : mode === 'batch_parallel' ? 'バッチ（並列）' : 'バッチ（順次）'}
+                </button>
+              ))}
+            </div>
+            {(slideExecMode === 'batch_parallel' || slideExecMode === 'batch_sequential') && (
+              <div>
+                <textarea
+                  className="w-full border rounded p-2 text-xs"
+                  placeholder={'処理対象リスト（1行1件）\n例:\n株式会社アルファ\nベータ商事株式会社'}
+                  rows={4}
+                  value={slideExecBatchInput}
+                  onChange={e => setSlideExecBatchInput(e.target.value)}
+                />
+                <div className="text-xs text-gray-500 mt-1">
+                  {slideExecMode === 'batch_parallel' ? '全件を同時に並列処理します' : '上から順に1件ずつ処理します'}
+                </div>
+              </div>
+            )}
+            <button
+              onClick={handleExecute}
+              className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-bold"
+            >
+              実行開始
+            </button>
+          </div>
+        )}
+
         {activeInsts.length > 0 && (
           <div className="border-t pt-3">
             <div className="text-sm font-semibold mb-2">実行中インスタンス ({activeInsts.length})</div>
@@ -525,8 +599,15 @@ export default function WorkflowManagement() {
   function renderCategoryTree() {
     return (
       <div className="w-64 min-h-screen bg-white border-r flex-shrink-0">
-        <div className="p-4 border-b">
+        <div className="p-4 border-b flex items-center justify-between">
           <h2 className="font-bold text-sm text-gray-700">業務カテゴリ</h2>
+          <button
+            onClick={() => { setNewCatMode({ parentId: null }); setNewCatName(''); }}
+            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+            title="親カテゴリを追加"
+          >
+            + 追加
+          </button>
         </div>
         <nav className="p-2">
           <button
@@ -543,38 +624,77 @@ export default function WorkflowManagement() {
             const isSelected = selectedCategory === parent.id;
             return (
               <div key={parent.id} className="mt-1">
-                <button
-                  onClick={() => setSelectedCategory(parent.id)}
-                  className={`w-full text-left px-3 py-2 rounded text-sm flex items-center justify-between ${
-                    isSelected ? 'bg-blue-50 text-blue-700 font-semibold' : 'hover:bg-gray-50 text-gray-700'
-                  }`}
-                >
-                  <span>{parent.icon} {parent.name}</span>
-                  <span className="text-xs text-gray-400">{getWorkflowCountForCategory(parent.id)}</span>
-                </button>
-                {children.length > 0 && (
-                  <div className="ml-4">
-                    {children.map(child => {
-                      const isChildSelected = selectedCategory === child.id;
-                      const count = workflows.filter(w => w.categoryId === child.id).length;
-                      return (
-                        <button
-                          key={child.id}
-                          onClick={() => setSelectedCategory(child.id)}
-                          className={`w-full text-left px-3 py-1.5 rounded text-sm flex items-center justify-between ${
-                            isChildSelected ? 'bg-blue-50 text-blue-700 font-semibold' : 'hover:bg-gray-50 text-gray-500'
-                          }`}
-                        >
-                          <span>{child.icon} {child.name}</span>
-                          <span className="text-xs text-gray-400">{count}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+                <div className="flex items-center group">
+                  <button
+                    onClick={() => setSelectedCategory(parent.id)}
+                    className={`flex-1 text-left px-3 py-2 rounded text-sm flex items-center justify-between ${
+                      isSelected ? 'bg-blue-50 text-blue-700 font-semibold' : 'hover:bg-gray-50 text-gray-700'
+                    }`}
+                  >
+                    <span>{parent.icon} {parent.name}</span>
+                    <span className="text-xs text-gray-400">{getWorkflowCountForCategory(parent.id, categories)}</span>
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setNewCatMode({ parentId: parent.id }); setNewCatName(''); }}
+                    className="opacity-0 group-hover:opacity-100 px-1.5 text-gray-400 hover:text-blue-600 text-xs transition-opacity"
+                    title="子カテゴリを追加"
+                  >
+                    +
+                  </button>
+                </div>
+                <div className="ml-4">
+                  {children.map(child => {
+                    const isChildSelected = selectedCategory === child.id;
+                    const count = workflows.filter(w => w.categoryId === child.id).length;
+                    return (
+                      <button
+                        key={child.id}
+                        onClick={() => setSelectedCategory(child.id)}
+                        className={`w-full text-left px-3 py-1.5 rounded text-sm flex items-center justify-between ${
+                          isChildSelected ? 'bg-blue-50 text-blue-700 font-semibold' : 'hover:bg-gray-50 text-gray-500'
+                        }`}
+                      >
+                        <span>{child.icon} {child.name}</span>
+                        <span className="text-xs text-gray-400">{count}</span>
+                      </button>
+                    );
+                  })}
+                  {/* Inline form for new child category */}
+                  {newCatMode && newCatMode.parentId === parent.id && (
+                    <div className="px-2 py-1.5 flex items-center gap-1">
+                      <input
+                        autoFocus
+                        type="text"
+                        value={newCatName}
+                        onChange={e => setNewCatName(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleAddCategory(); if (e.key === 'Escape') setNewCatMode(null); }}
+                        placeholder="カテゴリ名"
+                        className="flex-1 min-w-0 border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                      />
+                      <button onClick={handleAddCategory} className="text-xs text-blue-600 hover:text-blue-800 font-medium whitespace-nowrap">追加</button>
+                      <button onClick={() => setNewCatMode(null)} className="text-xs text-gray-400 hover:text-gray-600">x</button>
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })}
+          {/* Inline form for new parent category */}
+          {newCatMode && newCatMode.parentId === null && (
+            <div className="mt-2 px-2 py-1.5 flex items-center gap-1">
+              <input
+                autoFocus
+                type="text"
+                value={newCatName}
+                onChange={e => setNewCatName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleAddCategory(); if (e.key === 'Escape') setNewCatMode(null); }}
+                placeholder="新規カテゴリ名"
+                className="flex-1 min-w-0 border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+              />
+              <button onClick={handleAddCategory} className="text-xs text-blue-600 hover:text-blue-800 font-medium whitespace-nowrap">追加</button>
+              <button onClick={() => setNewCatMode(null)} className="text-xs text-gray-400 hover:text-gray-600">x</button>
+            </div>
+          )}
         </nav>
       </div>
     );
@@ -772,7 +892,7 @@ export default function WorkflowManagement() {
           {Object.entries(groupedByCategory).map(([catId, wfs]) => (
             <div key={catId} className="border rounded-lg overflow-hidden">
               <div className="px-4 py-2 bg-gray-50 border-b">
-                <span className="text-sm font-semibold text-gray-700">{getCategoryPath(catId)}</span>
+                <span className="text-sm font-semibold text-gray-700">{getCategoryPath(catId, categories)}</span>
               </div>
               <div className="divide-y">
                 {wfs.map(wf => {
@@ -796,6 +916,14 @@ export default function WorkflowManagement() {
                         <span>{TRIGGER_LABELS[wf.triggerType]}</span>
                         {countLabel !== '0件' && (
                           <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">{countLabel}</span>
+                        )}
+                        {wf.status === 'production' && wf.triggerType === 'manual' && !wf.isTemplate && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setSlideOver({ type: 'workflow', data: wf }); setSlideExecOpen(true); setSlideExecMode('single'); }}
+                            className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs hover:bg-green-200 font-medium"
+                          >
+                            実行
+                          </button>
                         )}
                       </div>
                     </div>
@@ -1072,6 +1200,47 @@ export default function WorkflowManagement() {
           )}
         </section>
 
+        {/* Execution candidates */}
+        <section className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <h3 className="text-sm font-bold text-blue-800 mb-3 flex items-center gap-2">
+            実行候補
+            {manualProductionWFs.length > 0 && (
+              <span className="px-2 py-0.5 bg-blue-200 text-blue-800 rounded-full text-xs">{manualProductionWFs.length}</span>
+            )}
+          </h3>
+          <div className="space-y-2">
+            {manualProductionWFs.length === 0 ? (
+              <div className="p-3 bg-white/60 rounded text-sm text-gray-500">実行可能なワークフローはありません。</div>
+            ) : (
+              manualProductionWFs.map(wf => {
+                const activeCount = getActiveInstanceCount(wf.id);
+                return (
+                  <div
+                    key={wf.id}
+                    className="p-3 bg-white border border-blue-200 rounded-lg flex items-center justify-between hover:shadow-sm transition-shadow"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-sm">{wf.name}</span>
+                        <span className="text-xs text-gray-400">{getCategoryPath(wf.categoryId, categories)}</span>
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {activeCount > 0 && <span className="text-blue-600">実行中: {activeCount}件</span>}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => { setSlideOver({ type: 'workflow', data: wf }); setSlideExecOpen(true); setSlideExecMode('single'); }}
+                      className="px-3 py-1.5 bg-green-600 text-white rounded text-xs hover:bg-green-700 font-medium whitespace-nowrap"
+                    >
+                      実行
+                    </button>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </section>
+
         {/* Approval history */}
         <section>
           <button
@@ -1135,79 +1304,6 @@ export default function WorkflowManagement() {
         <div className="bg-white border-b px-6 py-4 flex items-center justify-between">
           <h1 className="text-xl font-bold text-gray-800">ワークフロー管理</h1>
           <div className="flex items-center gap-3">
-            {/* New execution dropdown */}
-            <div className="relative">
-              <button
-                onClick={() => setNewExecDropdown(!newExecDropdown)}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium"
-              >
-                新規実行 ▾
-              </button>
-              {newExecDropdown && (
-                <div className="absolute right-0 mt-1 w-80 bg-white border rounded-lg shadow-lg z-50">
-                  <div className="p-3">
-                    {/* Execution mode selector */}
-                    <div className="text-xs text-gray-500 px-1 mb-2">実行モード</div>
-                    <div className="flex gap-1 mb-3 bg-gray-100 rounded-lg p-1">
-                      <button
-                        onClick={() => setExecMode('single')}
-                        className={`flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors ${
-                          execMode === 'single' ? 'bg-white shadow text-gray-800' : 'text-gray-500 hover:text-gray-700'
-                        }`}
-                      >
-                        単体実行
-                      </button>
-                      <button
-                        onClick={() => setExecMode('batch_parallel')}
-                        className={`flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors ${
-                          execMode === 'batch_parallel' ? 'bg-white shadow text-indigo-700' : 'text-gray-500 hover:text-gray-700'
-                        }`}
-                      >
-                        バッチ（並列）
-                      </button>
-                      <button
-                        onClick={() => setExecMode('batch_sequential')}
-                        className={`flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors ${
-                          execMode === 'batch_sequential' ? 'bg-white shadow text-teal-700' : 'text-gray-500 hover:text-gray-700'
-                        }`}
-                      >
-                        バッチ（順次）
-                      </button>
-                    </div>
-
-                    {/* Batch input area */}
-                    {(execMode === 'batch_parallel' || execMode === 'batch_sequential') && (
-                      <div className="mb-3">
-                        <textarea
-                          className="w-full border rounded p-2 text-xs"
-                          placeholder="処理対象リスト（1行1件）&#10;例:&#10;株式会社アルファ&#10;ベータ商事株式会社"
-                          rows={4}
-                        />
-                        <div className="text-xs text-gray-400 mt-1">
-                          {execMode === 'batch_parallel' ? '全件を同時に並列処理します' : '上から順に1件ずつ処理します'}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="text-xs text-gray-500 px-1 mb-1">本番稼働中の手動実行フロー</div>
-                    {manualProductionWFs.length === 0 ? (
-                      <div className="px-2 py-2 text-sm text-gray-400">該当なし</div>
-                    ) : (
-                      manualProductionWFs.map(wf => (
-                        <button
-                          key={wf.id}
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 rounded flex items-center justify-between"
-                          onClick={() => setNewExecDropdown(false)}
-                        >
-                          <span>{wf.name}</span>
-                          <span className="text-xs text-gray-400">{getExecutionModeLabel(execMode)}</span>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
             <Link
               to="/workflows/new"
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
@@ -1258,10 +1354,6 @@ export default function WorkflowManagement() {
         </div>
       )}
 
-      {/* Close new exec dropdown on outside click */}
-      {newExecDropdown && (
-        <div className="fixed inset-0 z-40" onClick={() => setNewExecDropdown(false)} />
-      )}
     </div>
   );
 }

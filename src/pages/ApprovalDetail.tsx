@@ -58,7 +58,7 @@ export default function ApprovalDetail() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <Link to="/approvals" className="text-sm text-gray-500 hover:text-gray-700">
+        <Link to="/" className="text-sm text-gray-500 hover:text-gray-700">
           &larr; 一覧へ
         </Link>
         <h1 className="text-2xl font-bold text-gray-900">承認詳細</h1>

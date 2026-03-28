@@ -45,7 +45,7 @@ export default function ExceptionDetail() {
     <div className="space-y-6">
       {/* Back link */}
       <Link
-        to="/exceptions"
+        to="/"
         className="inline-flex items-center text-sm text-blue-600 hover:text-blue-800"
       >
         &larr; 例外一覧へ戻る

@@ -79,7 +79,7 @@ export default function VersionCompare() {
     <div className="space-y-6">
       {/* Back link */}
       <Link
-        to="/workflows"
+        to="/"
         className="inline-flex items-center text-sm text-blue-600 hover:text-blue-800"
       >
         &larr; ワークフロー一覧へ戻る

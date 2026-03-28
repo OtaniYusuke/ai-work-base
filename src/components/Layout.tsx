@@ -6,6 +6,7 @@ import { ROLE_LABELS, notifications } from '../data/mockData';
 const navItems = [
   { path: '/', label: 'ワークフロー管理', icon: '🔄' },
   { path: '/agents', label: 'AIエージェント', icon: '🤖' },
+  { path: '/conversations', label: '会話', icon: '💬' },
   { path: '/datasources', label: 'データ元本', icon: '💾' },
   { path: '/settings', label: '設定', icon: '⚙️' },
 ];

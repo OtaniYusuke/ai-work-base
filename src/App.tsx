@@ -12,6 +12,7 @@ import AgentDetail from './pages/AgentDetail';
 import DataSourceList from './pages/DataSourceList';
 import DataSourceDetail from './pages/DataSourceDetail';
 import InstanceDetail from './pages/InstanceDetail';
+import Conversations from './pages/Conversations';
 import Settings from './pages/Settings';
 
 function ProtectedRoutes() {
@@ -31,6 +32,7 @@ function ProtectedRoutes() {
         <Route path="/datasources" element={<DataSourceList />} />
         <Route path="/datasources/:id" element={<DataSourceDetail />} />
         <Route path="/instances/:id" element={<InstanceDetail />} />
+        <Route path="/conversations" element={<Conversations />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
     </Routes>

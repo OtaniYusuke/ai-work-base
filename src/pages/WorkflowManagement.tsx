@@ -302,9 +302,6 @@ export default function WorkflowManagement() {
   // Approval slide-over state
   const [approvalComment, setApprovalComment] = useState('');
 
-  // Conversation sidebar
-  const [showConversationSidebar, setShowConversationSidebar] = useState(false);
-
   // Comment input state (for workflow slide-over)
   const [commentText, setCommentText] = useState('');
   const [showMentionSuggest, setShowMentionSuggest] = useState(false);
@@ -423,12 +420,6 @@ export default function WorkflowManagement() {
     };
   }, []);
 
-  // All comments sorted by time (newest first) for sidebar
-  const allCommentsSorted = useMemo(
-    () => [...workflowComments].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    []
-  );
-
   const parentCategories = categories.filter(c => c.parentId === null);
 
   // Mention suggestion candidates
@@ -456,9 +447,15 @@ export default function WorkflowManagement() {
 
   const handleAddCategory = () => {
     if (!newCatName.trim()) return;
-    addCategory(newCatName.trim(), newCatMode?.parentId ?? null, newCatMode?.parentId ? '📂' : '📁');
+    const pid = newCatMode?.parentId ?? null;
+    addCategory(newCatName.trim(), pid, pid ? '📂' : '📁');
     setNewCatName('');
     setNewCatMode(null);
+  };
+
+  // Change parent for new folder inline
+  const handleNewCatParentChange = (parentId: string) => {
+    setNewCatMode({ parentId: parentId === '__root__' ? null : parentId });
   };
 
   const handleActionClick = (item: ActionItem) => {
@@ -1138,13 +1135,28 @@ export default function WorkflowManagement() {
 
                       {/* Inline new child category form */}
                       {newCatMode && newCatMode.parentId === parent.id && (
-                        <div className="ml-10 px-4 py-2 flex items-center gap-2">
-                          <span className="text-gray-400">📂</span>
-                          <input autoFocus type="text" value={newCatName} onChange={e => setNewCatName(e.target.value)}
-                            onKeyDown={e => { if (e.key === 'Enter') handleAddCategory(); if (e.key === 'Escape') setNewCatMode(null); }}
-                            placeholder="サブカテゴリ名" className="flex-1 min-w-0 border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400" />
-                          <button onClick={handleAddCategory} className="text-xs text-blue-600 hover:text-blue-800 font-medium">追加</button>
-                          <button onClick={() => setNewCatMode(null)} className="text-xs text-gray-400 hover:text-gray-600">x</button>
+                        <div className="ml-10 px-4 py-2 space-y-2 bg-blue-50/50 border-t border-blue-100">
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-400">📂</span>
+                            <input autoFocus type="text" value={newCatName} onChange={e => setNewCatName(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') handleAddCategory(); if (e.key === 'Escape') setNewCatMode(null); }}
+                              placeholder="フォルダ名" className="flex-1 min-w-0 border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                            <button onClick={handleAddCategory} className="text-xs text-blue-600 hover:text-blue-800 font-medium">追加</button>
+                            <button onClick={() => setNewCatMode(null)} className="text-xs text-gray-400 hover:text-gray-600">x</button>
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-gray-500">
+                            <span>作成先:</span>
+                            <select
+                              value={newCatMode.parentId ?? '__root__'}
+                              onChange={e => handleNewCatParentChange(e.target.value)}
+                              className="border rounded px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+                            >
+                              <option value="__root__">ルート（トップレベル）</option>
+                              {parentCategories.map(pc => (
+                                <option key={pc.id} value={pc.id}>{pc.icon} {pc.name}</option>
+                              ))}
+                            </select>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1153,68 +1165,38 @@ export default function WorkflowManagement() {
               );
             })}
 
-            {/* Add new parent category at bottom */}
+            {/* Add new category at bottom */}
             {newCatMode && newCatMode.parentId === null ? (
-              <div className="px-4 py-2.5 flex items-center gap-2 border-t">
-                <span className="text-gray-400">📁</span>
-                <input autoFocus type="text" value={newCatName} onChange={e => setNewCatName(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') handleAddCategory(); if (e.key === 'Escape') setNewCatMode(null); }}
-                  placeholder="新規カテゴリ名" className="flex-1 min-w-0 border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400" />
-                <button onClick={handleAddCategory} className="text-xs text-blue-600 hover:text-blue-800 font-medium">追加</button>
-                <button onClick={() => setNewCatMode(null)} className="text-xs text-gray-400 hover:text-gray-600">x</button>
+              <div className="px-4 py-2.5 border-t space-y-2 bg-blue-50/50">
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-400">📁</span>
+                  <input autoFocus type="text" value={newCatName} onChange={e => setNewCatName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleAddCategory(); if (e.key === 'Escape') setNewCatMode(null); }}
+                    placeholder="フォルダ名" className="flex-1 min-w-0 border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                  <button onClick={handleAddCategory} className="text-xs text-blue-600 hover:text-blue-800 font-medium">追加</button>
+                  <button onClick={() => setNewCatMode(null)} className="text-xs text-gray-400 hover:text-gray-600">x</button>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-gray-500">
+                  <span>作成先:</span>
+                  <select
+                    value={newCatMode.parentId ?? '__root__'}
+                    onChange={e => handleNewCatParentChange(e.target.value)}
+                    className="border rounded px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  >
+                    <option value="__root__">ルート（トップレベル）</option>
+                    {parentCategories.map(pc => (
+                      <option key={pc.id} value={pc.id}>{pc.icon} {pc.name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             ) : (
               <button onClick={() => { setNewCatMode({ parentId: null }); setNewCatName(''); }}
                 className="w-full px-4 py-2.5 text-left text-sm text-gray-400 hover:text-blue-600 hover:bg-gray-50 transition-colors border-t flex items-center gap-2">
-                <span>+</span> 新規カテゴリ
+                <span>+</span> 新規フォルダ
               </button>
             )}
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ============================================================
-  // Conversation Sidebar
-  // ============================================================
-  function renderConversationSidebar() {
-    return (
-      <div className="w-80 bg-white border-l flex flex-col h-full flex-shrink-0">
-        <div className="px-4 py-3 border-b flex items-center justify-between bg-gray-50">
-          <h3 className="text-sm font-bold text-gray-700 flex items-center gap-2">
-            <span>💬</span> 会話ログ
-          </h3>
-          <button onClick={() => setShowConversationSidebar(false)} className="text-gray-400 hover:text-gray-600 text-sm">&times;</button>
-        </div>
-        <div className="flex-1 overflow-y-auto">
-          {allCommentsSorted.map(c => {
-            const wf = workflows.find(w => w.id === c.workflowId);
-            return (
-              <div
-                key={c.id}
-                onClick={() => { if (wf) setSlideOver({ type: 'workflow', data: wf }); }}
-                className="px-4 py-3 border-b border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors"
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <div className={`w-5 h-5 rounded-full ${getUserInitialColor(c.authorId)} text-white flex items-center justify-center text-[9px] font-bold flex-shrink-0`}>
-                    {getUserInitial(c.authorId)}
-                  </div>
-                  <span className="text-xs font-semibold text-gray-700">{getUserName(c.authorId)}</span>
-                  <span className="text-[10px] text-gray-400">{c.createdAt}</span>
-                </div>
-                {wf && (
-                  <div className="mb-1">
-                    <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">{wf.name}</span>
-                  </div>
-                )}
-                <div className="text-xs text-gray-600 line-clamp-2 leading-relaxed">{renderCommentContent(c.content)}</div>
-              </div>
-            );
-          })}
-          {allCommentsSorted.length === 0 && (
-            <div className="p-6 text-center text-sm text-gray-400">会話ログはありません。</div>
-          )}
         </div>
       </div>
     );
@@ -1229,25 +1211,11 @@ export default function WorkflowManagement() {
   ];
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      {/* Main content area */}
-      <div className="flex-1 min-w-0 flex flex-col">
-        {/* Header */}
-        <div className="bg-white border-b px-6 py-4 flex items-center justify-between">
-          <h1 className="text-xl font-bold text-gray-800">ワークフロー管理</h1>
-          <button
-            onClick={() => setShowConversationSidebar(!showConversationSidebar)}
-            className={`relative p-2 rounded-lg transition-colors ${showConversationSidebar ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
-            title="会話ログ"
-          >
-            <span className="text-lg">💬</span>
-            {allCommentsSorted.length > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 bg-blue-500 text-white text-[9px] rounded-full w-4 h-4 flex items-center justify-center font-bold">
-                {allCommentsSorted.length}
-              </span>
-            )}
-          </button>
-        </div>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b px-6 py-4">
+        <h1 className="text-xl font-bold text-gray-800">ワークフロー管理</h1>
+      </div>
 
         {/* Tabs */}
         <div className="bg-white border-b px-6">
@@ -1273,10 +1241,6 @@ export default function WorkflowManagement() {
             {activeTab === 'overview' && renderOverviewTab()}
           </div>
         </div>
-      </div>
-
-      {/* Conversation sidebar */}
-      {showConversationSidebar && renderConversationSidebar()}
 
       {/* Slide-over */}
       {slideOver && (
